@@ -191,9 +191,9 @@ pub trait ContextProvidedWithParent: ContextProvided {
     fn parent_ctx_provided(&self) -> &Self::ParentContextProvided;
 }
 
-pub trait MutContextProvidedWithParent: MutContextProvided {
-    type ParentContextProvided: MutContextProvided;
-    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentContextProvided;
+pub trait MutContextProvidedWithParent: MutContextProvided + ContextProvidedWithParent {
+    type ParentMutContextProvided: MutContextProvided;
+    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided;
 }
 
 pub struct StartContextProvided<'c, Context> {
@@ -245,6 +245,17 @@ where
     }
 }
 
+impl<'c, ForwardedContextProvided> ContextProvidedWithParent for ForwardingContextProvided<'c, ForwardedContextProvided>
+where 
+    ForwardedContextProvided: ContextProvidedWithParent
+{
+    type ParentContextProvided = ForwardedContextProvided::ParentContextProvided;
+
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        self.forwarded_ctx.parent_ctx_provided()
+    }
+}
+
 pub struct ForwardingMutContextProvided<'c, ForwardedContextProvided>
 where
     ForwardedContextProvided: MutContextProvided
@@ -272,6 +283,28 @@ where
     }
 }
 
+impl<'c, ForwardedContextProvided> ContextProvidedWithParent for ForwardingMutContextProvided<'c, ForwardedContextProvided>
+where 
+    ForwardedContextProvided: MutContextProvidedWithParent
+{
+    type ParentContextProvided = ForwardedContextProvided::ParentContextProvided;
+
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        self.forwarded_ctx.parent_ctx_provided()
+    }
+}
+
+impl<'c, ForwardedContextProvided> MutContextProvidedWithParent for ForwardingMutContextProvided<'c, ForwardedContextProvided>
+where 
+    ForwardedContextProvided: MutContextProvidedWithParent
+{
+    type ParentMutContextProvided = ForwardedContextProvided::ParentMutContextProvided;
+
+    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
+        self.forwarded_ctx.parent_mut_ctx_provided()
+    }
+}
+
 pub struct SubContextProvidedWithParent<ParentContextProvided, SubContext, ContextGetter>
 where
     ParentContextProvided: ContextProvided,
@@ -295,38 +328,82 @@ where
     }
 }
 
-pub struct MutSubContextProvidedWithParent<'c, ParentContextProvided, ContextGetter, MutContextGetter>
+impl<SubContext, ParentContextProvided, ContextGetter> ContextProvidedWithParent
+for SubContextProvidedWithParent<ParentContextProvided, SubContext, ContextGetter>
 where
-    ParentContextProvided: MutContextProvided
+    ParentContextProvided: ContextProvided,
+    ContextGetter: Fn(&ParentContextProvided::Context) -> &SubContext
 {
-    ctx_getter: ContextGetter,
-    mut_ctx_getter: MutContextGetter,
-    parent_ctx: &'c mut ParentContextProvided
-}
+    type ParentContextProvided = ParentContextProvided;
 
-impl<'c, Context, ParentMutContextProvided, ContextGetter, MutContextGetter> MutContextProvided
-for MutSubContextProvidedWithParent<'c, ParentMutContextProvided, ContextGetter, MutContextGetter>
-where
-    ParentMutContextProvided: MutContextProvided,
-    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &Context,
-    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut Context
-{
-    fn mut_ctx(&mut self) -> &mut Context {
-        (self.mut_ctx_getter)(self.parent_ctx.mut_ctx())
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        &self.parent_ctx_provided
     }
 }
 
-impl<'c, Context, ParentMutContextProvided, ContextGetter, MutContextGetter> ContextProvided
-for MutSubContextProvidedWithParent<'c, ParentMutContextProvided, ContextGetter, MutContextGetter>
+pub struct MutSubContextProvidedWithParent<ParentContextProvided, SubContext, ContextGetter, MutContextGetter>
+where
+    ParentContextProvided: MutContextProvided,
+    ContextGetter: Fn(&ParentContextProvided::Context) -> &SubContext,
+    MutContextGetter: Fn(&mut ParentContextProvided::Context) -> &mut SubContext
+{
+    ctx_getter: ContextGetter,
+    mut_ctx_getter: MutContextGetter,
+    parent_ctx_provided: ParentContextProvided,
+    _sub_context_phantom: PhantomData<SubContext>
+}
+
+impl<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter> MutContextProvided
+for MutSubContextProvidedWithParent<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter>
 where
     ParentMutContextProvided: MutContextProvided,
-    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &Context,
-    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut Context
+    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &SubContext,
+    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut SubContext
 {
-    type Context = Context;
+    fn mut_ctx(&mut self) -> &mut SubContext {
+        (self.mut_ctx_getter)(self.parent_ctx_provided.mut_ctx())
+    }
+}
 
-    fn ctx(&self) -> &Context {
-        (self.ctx_getter)(self.parent_ctx.ctx())
+impl<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter> ContextProvided
+for MutSubContextProvidedWithParent<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter>
+where
+    ParentMutContextProvided: MutContextProvided,
+    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &SubContext,
+    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut SubContext
+{
+    type Context = SubContext;
+
+    fn ctx(&self) -> &SubContext {
+        (self.ctx_getter)(self.parent_ctx_provided.ctx())
+    }
+}
+
+impl<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter> ContextProvidedWithParent
+for MutSubContextProvidedWithParent<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter>
+where
+    ParentMutContextProvided: MutContextProvided,
+    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &SubContext,
+    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut SubContext
+{
+    type ParentContextProvided = ParentMutContextProvided;
+
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        &self.parent_ctx_provided
+    }
+}
+
+impl<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter> MutContextProvidedWithParent
+for MutSubContextProvidedWithParent<ParentMutContextProvided, SubContext, ContextGetter, MutContextGetter>
+where
+    ParentMutContextProvided: MutContextProvided,
+    ContextGetter: Fn(&ParentMutContextProvided::Context) -> &SubContext,
+    MutContextGetter: Fn(&mut ParentMutContextProvided::Context) -> &mut SubContext
+{
+    type ParentMutContextProvided = ParentMutContextProvided;
+
+    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
+        &mut self.parent_ctx_provided
     }
 }
 
@@ -603,6 +680,11 @@ macro_rules! __pick_trait_impl {
         $cont!{ { {$impl_ty} {$($trait_ty)+} } => $crate::__emit_trait_from_sub_context{ctx: $ctx} => $($cont_args)* }
     };
     (
+        { {extern} {$($trait_ty:tt)+} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { {$($trait_ty)+} } => $crate::__emit_trait_from_extern_context{ctx: $ctx} => $($cont_args)* }
+    };
+    (
         { {$impl_ty:ty} {$($trait_ty:tt)+} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{ { {$impl_ty} {$($trait_ty)+} } => $crate::__emit_trait_impl{ctx: $ctx} => $($cont_args)* }
@@ -649,6 +731,7 @@ macro_rules! __for_each_trait_statement {
         $cont! {
             { $($input)* }
             => ::demuncher::split_by{;}
+            => ::demuncher::skip_all_empty{}
             => [
                 ::demuncher::debrace{}
                 => ::demuncher::split_by{=>}
@@ -702,10 +785,10 @@ macro_rules! __emit_trait_with_single_or_multiple_impls {
     //     }
     // };
     (
-        { { $($trait:tt)+ } { $($impl:tt)+ } } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
+        { { $($trait_head:ident)?$(::$trait_tail:ident)* } { $($impl:tt)+ } } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont! {
-            { {$($impl)+} {$($trait)+} }
+            { {$($impl)+} {$($trait_head)?$(::$trait_tail)*} }
             => $crate::__pick_trait_impl{ ctx: $ctx }
             => $($cont_args)*
         }
@@ -723,17 +806,6 @@ macro_rules! __emit_trait_impl {
                 impl<'c> ContextMutServiceProvider<'c, dyn $($trait_head)?$(::$trait_tail)* + 'c>
                     for $ctx
                 {
-                    // fn get_mut_service(ctx_provided: &'c mut TContextProvided) -> ::std::boxed::Box<dyn $trait_ty + 'c> {
-                    //     ::std::boxed::Box::new(MutServiceProvidedWithContext {
-                    //         data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                    //         mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
-                    //         ctx_provided: ForwardingMutContextProvided {
-                    //             forwarded_ctx: ctx_provided
-                    //         },
-                    //         _service_phantom: PhantomData
-                    //     })
-                    // }
-
                     fn into_mut_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>
                     where
                         NewContextProvided: MutContextProvided<Context = $ctx> + 'c
@@ -758,16 +830,6 @@ macro_rules! __emit_trait_impl {
                 impl<'c> ContextServiceProvider<'c, dyn $($trait_head)?$(::$trait_tail)* + 'c>
                     for $ctx
                 {
-                    // fn get_service(ctx_provided: &'c TContextProvided) -> ::std::boxed::Box<dyn $trait_ty + 'c> {
-                    //     ::std::boxed::Box::new(ServiceProvidedWithContext {
-                    //         data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                    //         ctx_provided: ForwardingContextProvided {
-                    //             forwarded_ctx: ctx_provided
-                    //         },
-                    //         _service_phantom: PhantomData
-                    //     })
-                    // }
-
                     fn into_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>
                     where
                         NewContextProvided: ContextProvided<Context = $ctx> + 'c
@@ -779,38 +841,6 @@ macro_rules! __emit_trait_impl {
                         })
                     }
                 }
-                // impl<'c, ParentContext, ContextGetter> ServiceProvider<'c, dyn $trait_ty + 'c>
-                //     for ContextProvidedWithParent<'c, $ctx, ParentContext, ContextGetter>
-                // where
-                //     ContextGetter: Fn(&ParentContext) -> &$ctx + Copy
-                // {
-                //     fn get_service(&'c self) -> ::std::boxed::Box<dyn $trait_ty + 'c> {
-                //         ::std::boxed::Box::new(ServiceProvidedWithContext {
-                //             ctx_provided: ContextProvidedWithParent {
-                //                 ctx_getter: self.ctx_getter,
-                //                 parent_ctx: self.parent_ctx
-                //             },
-                //             data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                //         })
-                //     }
-                // }
-
-                // impl<'c, TContextProvided> ServiceProvider<'c, dyn $trait_ty + 'c>
-                //     for TContextProvided
-                // where
-                //     TContextProvided: MutContextProvided<'c, Context = $ctx>
-                // {
-                //     fn get_service(&'c mut self) -> ::std::boxed::Box<dyn $trait_ty + 'c> {
-                //         ::std::boxed::Box::new(MutServiceProvidedWithContext {
-                //             data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                //             mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
-                //             ctx_provided: ForwardingMutContextProvided {
-                //                 forwarded_ctx: self
-                //             },
-                //             _service_phantom: PhantomData
-                //         })
-                //     }
-                // }
             }
             => $($cont_args)*
         }
@@ -821,7 +851,63 @@ macro_rules! __emit_trait_impl {
 #[doc(hidden)]
 macro_rules! __emit_trait_from_sub_context {
     (
+        { {$impl_ty:ty} {mut $($trait_head:ident)?$(::$trait_tail:ident)*} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<'c> ContextMutServiceProvider<'c, dyn $($trait_head)?$(::$trait_tail)* + 'c>
+                    for $ctx
+                {
+                    fn into_mut_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>
+                    where
+                        NewContextProvided: MutContextProvided<Context = $ctx> + 'c
+                    {
+                        let sub_ctx_provided = MutSubContextProvidedWithParent {
+                                ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                                mut_ctx_getter: |parent: &mut $ctx| -> &mut $impl_ty { parent.sub_contexts.get_mut() },
+                                parent_ctx_provided: new_ctx_provided,
+                                _sub_context_phantom: PhantomData
+                            };
+                        //<$impl_ty as ContextServiceProvider<'c, _, dyn $($trait_head)?$(::$trait_tail)* + 'c>>::into_service(sub_ctx_provided)
+                        <$impl_ty>::into_mut_service(sub_ctx_provided)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+    (
         { {$impl_ty:ty} {$($trait_head:ident)?$(::$trait_tail:ident)*} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<'c> ContextServiceProvider<'c, dyn $($trait_head)?$(::$trait_tail)* + 'c>
+                    for $ctx
+                {
+                    fn into_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>
+                    where
+                        NewContextProvided: ContextProvided<Context = $ctx> + 'c
+                    {
+                        let sub_ctx_provided = SubContextProvidedWithParent {
+                                ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                                parent_ctx_provided: new_ctx_provided,
+                                _sub_context_phantom: PhantomData
+                            };
+                        //<$impl_ty as ContextServiceProvider<'c, _, dyn $($trait_head)?$(::$trait_tail)* + 'c>>::into_service(sub_ctx_provided)
+                        <$impl_ty>::into_service(sub_ctx_provided)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_trait_from_extern_context {
+    (
+        { {$($trait_head:ident)?$(::$trait_tail:ident)*} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont! {
             { 
@@ -1325,11 +1411,11 @@ mod tests {
     }
     //trace_macros!(false);
 
-    /*#[test]
+    #[test]
     fn service_calls_implementations_from_parent_context() {
         let mut context = ServiceCallsImplementationsFromParentContextCallingContext::default();
-        (context.sub_contexts.get_mut().get_mut_service() as Box<dyn SetterMultiService>).set_value(44);
-        (context.get_service() as Box<dyn CallingService>).call_service(2);
+        (context.provide_mut().get_mut_service() as Box<dyn SetterMultiService>).set_value(44);
+        (context.provide().get_service() as Box<dyn CallingService>).call_service(2);
         let expected_calls = vec![
             "+setter_multi_service(44)",
             "-setter_multi_service(44)",
@@ -1340,7 +1426,7 @@ mod tests {
             "-called_multi_service(1, 44)",
             "-calling_service(2)"
         ];
-        assert_eq!(*(context.sub_contexts.get_mut().get_service() as Box<dyn LoggedService>).get_calls(), expected_calls);
+        assert_eq!(*(context.provide_mut().get_service() as Box<dyn LoggedService>).get_calls(), expected_calls);
     }
 
     service_context! {
@@ -1349,12 +1435,10 @@ mod tests {
             CallingMultipleServiceImpl1: CallingService;
             CalledMultiServiceImpl1;
             LoggingServiceImpl1: LoggingService, LoggedService;
-        }
-        sub {
-            ServiceCallsImplementationsFromSubContextCalledContext;
+            sub ServiceCallsImplementationsFromParentContextCalledContext: mut SetterMultiService;
         }
         traits {
-            CalledMultiService => [CalledMultiServiceImpl1, sub ServiceCallsImplementationsFromSubContextCalledContext]
+            CalledMultiService => [CalledMultiServiceImpl1, sub ServiceCallsImplementationsFromParentContextCalledContext]
         }
     }
 
@@ -1363,13 +1447,11 @@ mod tests {
         ServiceCallsImplementationsFromParentContextCalledContext {
             CalledMultiServiceImpl2: mut SetterMultiService;
         }
-        extern {
-            ServiceCallsImplementationsFromParentContextCallingContext: LoggingService;
-        }
         traits {
-            CalledMultiService => [CalledMultiServiceImpl2]
+            CalledMultiService => [CalledMultiServiceImpl2];
+            LoggingService => extern;
         }
-    }*/
+    }
 
     #[derive(Debug, Default)]
     struct CallingMultipleServiceImpl1; 
