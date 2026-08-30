@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#![recursion_limit = "4096"]
+#![recursion_limit = "8192"]
 
 mod context_dispatching;
 mod visiting;
