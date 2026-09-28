@@ -306,91 +306,6 @@ where
     }
 }
 
-// pub trait ContextServiceProvider<'c, ServiceProvided: ?Sized + 'c> {
-//     // fn get_service(ctx_provided: &'c TContextProvided) -> Box<ServiceProvided>;
-//     fn into_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> Box<ServiceProvided>
-//         where
-//             NewContextProvided: ContextProvided<Context = Self> + 'c;
-// }
-
-// impl<'c, TContextProvided, ServiceProvided> ServiceProvider<'c, ServiceProvided>
-// for TContextProvided
-// where
-//     TContextProvided: ContextProvided,
-//     TContextProvided::Context: ContextServiceProvider<'c, ServiceProvided>,
-//     ServiceProvided: ?Sized + 'c
-// {
-//     fn get_service(&'c self) -> Box<ServiceProvided> {
-//         TContextProvided::Context::into_service(
-//             ForwardingContextProvided {
-//                 forwarded_ctx: self
-//             }
-//         )
-//     }
-// }
-
-// pub trait ContextMutServiceProvider<'c, ServiceProvided: ?Sized + 'c> {
-//     // fn get_mut_service(ctx_provided: &'c mut TContextProvided) -> Box<ServiceProvided>;
-//     fn into_mut_service<NewContextProvided>(new_ctx_provided: NewContextProvided) -> Box<ServiceProvided>
-//         where
-//             NewContextProvided: MutContextProvided<Context = Self> + 'c;
-// }
-
-// impl<'c, TContextProvided, ServiceProvided> MutServiceProvider<'c, ServiceProvided>
-// for TContextProvided
-// where
-//     TContextProvided: MutContextProvided,
-//     TContextProvided::Context: ContextMutServiceProvider<'c, ServiceProvided>,
-//     ServiceProvided: ?Sized + 'c
-// {
-//     fn get_mut_service(&'c mut self) -> Box<ServiceProvided> {
-//         TContextProvided::Context::into_mut_service(
-//             ForwardingMutContextProvided {
-//                 forwarded_ctx: self
-//             }
-//         )
-//     }
-// }
-
-// pub trait ContextMultipleServiceProvider<'p, ServiceProvidedGat: SeqGat> {
-//     // fn get_services(ctx_provided: &'c TContextProvided) -> Vec<Box<ServiceProvided>>;
-//     fn into_services<NewContextProvided>(new_ctx_provided: NewContextProvided)
-//         -> impl Seq<'p, ItemGat = ServiceProvidedGat>
-//         where NewContextProvided: ContextProvided<Context = Self> + Sized + 'p;
-// }
-
-// impl<'c, TContextProvided, ServiceProvidedGat> MultipleServiceProvider<'c, ServiceProvidedGat>
-// for TContextProvided
-// where
-//     TContextProvided: ContextProvided,
-//     TContextProvided::Context: ContextMultipleServiceProvider<'c, ServiceProvidedGat>,
-//     ServiceProvidedGat: SeqGat
-// {
-//     fn get_services(&'c self) -> impl Seq<'c, ItemGat = ServiceProvidedGat> {
-//         TContextProvided::Context::into_services(
-//             ForwardingContextProvided {
-//                 forwarded_ctx: self
-//             }
-//         )
-//     }
-// }
-
-// pub trait ContextMultipleMutServiceProvider<TContextProvided: MutContextProvided, ServiceProvided: ?Sized> {
-//     fn get_mut_services(ctx_provided: &mut TContextProvided) -> Vec<Box<ServiceProvided>>;
-// }
-
-// impl<'c, TContextProvided, ServiceProvided> MultipleMutServiceProvider<'c, ServiceProvided>
-// for TContextProvided
-// where
-//     TContextProvided: MutContextProvided,
-//     TContextProvided::Context: ContextMultipleMutServiceProvider<TContextProvided, ServiceProvided>,
-//     ServiceProvided: ?Sized + 'c
-// {
-//     fn get_mut_services(&'c mut self) -> Vec<Box<ServiceProvided>> {
-//         TContextProvided::Context::get_mut_services(self)
-//     }
-// }
-
 #[macro_export]
 macro_rules! service_context {
     (
@@ -398,158 +313,61 @@ macro_rules! service_context {
         $vis:vis $ctx:ident $(as $ctx_label:ident)? { $($impls:tt)* }
         $(traits { $($traits:tt)* })?
     ) => {
-        $(#[$ctx_meta])*
-        #[allow(dead_code)]
-        $vis struct $ctx {
-            services: ::demuncher::apply_pipe!{
-                {$($impls)*}
-                => $crate::__take_impls_list{
-                    ::demuncher::when{ { $crate::__is_impl{} } => { ::demuncher::embrace{} } else { ::demuncher::reset{} } }
+        ::demuncher::apply_pipe!{
+            { { $($impls)* } { $($($traits)*)? } }
+            => ::demuncher::fork{
+                {
+                   ::demuncher::debrace{}
+                   => $crate::__get_impl_stmts{}
+                   => ::demuncher::embrace{}
                 }
-                => $crate::__as_hlist{}
-            },
-            sub_contexts: ::demuncher::apply_pipe!{
-                {$($impls)*}
-                => $crate::__take_impls_list{
-                    ::demuncher::when{ { $crate::__is_sub{} } => { ::demuncher::tail{} => ::demuncher::embrace{} } else { ::demuncher::reset{} } }
+                {
+                   ::demuncher::debrace{}
+                   => $crate::__get_trait_stmts{}
+                   => ::demuncher::embrace{}
                 }
-                => $crate::__as_hlist{}
             }
-        }
-
-        ::demuncher::apply_pipe!{
-            { {$($impls)* } {$($($traits)*)?} }
-            => $crate::__emit_extern_deps{}
-            => $crate::__emit_ctx_provided{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? }
-            => $crate::__apply_paste{}
-        }
-
-        // ::paste::paste!{
-            // $vis trait [<$ctx ඞIntoServiceProvider>]<'c, ServiceProvided: ?Sized + 'c>
-            // {
-            //     fn into_service<NewContextProvided>(new_ctx_provided: [<$ctx ඞProvided>]<NewContextProvided>) -> Box<ServiceProvided>
-            //         where NewContextProvided: ContextProvided<Context = $ctx> + 'c;
-            // }
-
-            // $vis trait [<$ctx ඞIntoMutServiceProvider>]<'c, ServiceProvided: ?Sized + 'c>
-            // {
-            //     fn into_mut_service<NewContextProvided>(new_ctx_provided: [<$ctx ඞMutProvided>]<NewContextProvided>) -> Box<ServiceProvided>
-            //         where NewContextProvided: MutContextProvided<Context = $ctx> + 'c;
-            // }
-
-            // $(
-            //     $vis trait [<$ctx ඞSubContextProvider>] {
-            //         fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx>>;
-
-            //         fn [<get_ $ctx_label>](&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx>> {
-            //             self.get_sub_ctx()
-            //         }
-            //     }
-
-            //     $vis trait [<$ctx ඞMutSubContextProvider>] {
-            //         fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx>>;
-
-            //         fn [<get_mut_ $ctx_label>](&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx>> {
-            //             self.get_mut_sub_ctx()
-            //         }
-            //     }
-            // )?
-        // }
-
-        ::demuncher::apply_pipe!{
-            {$($impls)*}
-            => $crate::__for_each_impl_with_trait{
-                {} => {
-                    ::demuncher::fork{
+            => ::demuncher::assert_flow{
+                !"statements"
+                { { { impl+ } { { @struct trait_struct }* } }* }
+                { { { @struct trait_struct } { { impls+ }* } }* }
+            }
+            => ::demuncher::fork_repeated{
+                {
+                    ::demuncher::head{}
+                    => ::demuncher::debrace{}
+                    => $crate::__get_service_ctx_hlists{}
+                    => $crate::__emit_service_ctx_struct{ // emitting
+                        ctx_meta: { $(#[$ctx_meta])* },
+                        vis: { $vis },
+                        ctx: { $ctx }
+                    }
+                }
+                {
+                    ::demuncher::fork_repeated{
                         { ::demuncher::pass{} }
                         {
-                            ::demuncher::debrace{}
-                            => $crate::__split_service_kind{}
-                            => $crate::__append_service_provider{}
-                        }
-                        {
-                            ::demuncher::reset{ {$($impls)* } {$($($traits)*)?} }
-                            => $crate::__emit_extern_deps{}
+                            $crate::__get_extern_provided_trait_structs{}
+                            => ::demuncher::assert_flow{ !"extern trait structs" {@struct trait_struct}* }
+                            => $crate::__trait_structs_as_deps{}
                             => ::demuncher::embrace{}
                         }
                     }
-                    => $crate::__pick_trait_impl{
-                        ctx: $ctx
+                    => ::demuncher::assert_flow{
+                        !"stmts + external deps"
+                        { { { impl+ } { { @struct trait_struct }* } }* }
+                        { { { @struct trait_struct } { { impls+ }* } }* }
+                        { extern_deps* }
                     }
-                }
-            }
-            => $crate::__apply_paste{}
-        }
-
-        ::demuncher::apply_pipe!{
-            {$($impls)*}
-            => $crate::__for_each_impl_statement{
-                ::demuncher::head{}
-                => ::demuncher::debrace{}
-                => ::demuncher::when{
-                    { $crate::__is_sub{} }
-                    => {
-                        ::demuncher::tail{}
-                        => ::demuncher::fork{
-                            { ::demuncher::embrace{} }
-                            {
-                                ::demuncher::reset{ {$($impls)* } {$($($traits)*)?} }
-                                => $crate::__emit_extern_deps{}
-                                => ::demuncher::embrace{}
-                            }
-                            {
-                                ::demuncher::reset{ {$($impls)* } {$($($traits)*)?} }
-                                => $crate::__emit_deps_all_along_no_mut{}
-                            }
+                    => ::demuncher::fork_repeated{
+                        {
+                            ::demuncher::take{ - - + }
+                            => ::demuncher::debrace{}
+                            => $crate::__emit_ctx_provided{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? } // emitting
                         }
-                        => $crate::__emit_sub_ctx_provider_impl{ ctx: $ctx }
-                    } else {
-                        ::demuncher::reset{}
-                    }
-                }
-            }
-            => $crate::__apply_paste{}
-        }
-
-        ::demuncher::apply_pipe!{
-            {$($($traits)*)?}
-            => $crate::__for_each_trait_statement{
-                ::demuncher::when{
-                    { ::demuncher::tail{} => ::demuncher::debrace{} => $crate::__is_multiple{} } => {
-                        ::demuncher::fork{
-                            {
-                                ::demuncher::debrace{}
-                                => $crate::__split_service_kind{multiple}
-                                => $crate::__append_service_provider{}
-                            }
-                            { ::demuncher::pass{} }
-                            {
-                                ::demuncher::reset{ {$($impls)* } {$($($traits)*)?} }
-                                => $crate::__emit_extern_deps{}
-                                => ::demuncher::embrace{}
-                            }
-                        }
-                        => $crate::__emit_trait_with_multiple_impls{
-                            ctx: $ctx
-                        }
-                    } else {
-                        ::demuncher::swap{}
-                        ::demuncher::fork{
-                            { ::demuncher::pass{} }
-                            {
-                                ::demuncher::debrace{}
-                                => $crate::__split_service_kind{}
-                                => $crate::__append_service_provider{}
-                            }
-                            {
-                                ::demuncher::reset{ {$($impls)* } {$($($traits)*)?} }
-                                => $crate::__emit_extern_deps{}
-                                => ::demuncher::embrace{}
-                            }
-                        }
-                        => $crate::__pick_trait_impl{
-                            ctx: $ctx
-                        }
+                        { $crate::__emit_single_trait_impls{ ctx: $ctx } }
+                        { $crate::__emit_multiple_impls_for_traits{ ctx: $ctx } }
+                        { $crate::__emit_sub_ctx_provider_impls{ ctx: $ctx } }
                     }
                 }
             }
@@ -666,31 +484,7 @@ macro_rules! def_service {
             }
 
             $crate::def_seq_gat_for_multi_trait!($trait_ty);
-            // $vis trait [<$trait_ty ඞIter>] {
-
-            // }
-
-            // $vis struct [<$trait_ty ඞImplsIter>]<'s, TContextProvided> {
-            //     pub ctx_provided: [<$ctx ඞProvided>]<TContextProvided>
-            //     pub impls: Vec<Box<dyn FnOnce(&'s Self) -> ::std::boxed::Box<dyn ::std::iter::Iterator<Item = ::std::boxed::Box<dyn $trait_ty + 's>> + 's> + 's>>
-            // }
-
-            // impl<'s> Iterator for [<$trait_ty ඞImplsIter>]<'s> {
-            //     type Item = ::std::boxed::Box<dyn $trait_ty + 's>;
-
-            //     fn next(&mut self) -> Option<Self::Item> {
-
-            //     }
-            // }
         }
-
-        // ::paste::paste!{
-        //     $vis struct [<$trait_ty ඞServiceGat>];
-
-        //     impl ServiceGat for [<$trait_ty ඞServiceGat>] {
-        //         type ServiceProvided<'a> = ::std::boxed::Box<dyn $trait_ty + 'a>;
-        //     }
-        // }
     };
 }
 
@@ -706,6 +500,83 @@ macro_rules! service_deps {
                 => $crate::__emit_dependant_trait_impl{ impl: $impl_ty }
             ]
             => $crate::__apply_paste{}
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_service_ctx_hlists {
+    (
+        { $($impls:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                { $($impls)* }
+                { $($impls)* }
+            }
+            => ::demuncher::fork{
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::head{}
+                        => ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            { $crate::__is_impl{} } => {
+                                ::demuncher::embrace{}
+                            }
+                        }
+                    ]
+                    => ::demuncher::join_with{,}
+                    => $crate::__as_hlist{}
+                    => ::demuncher::embrace{}
+                }
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::head{}
+                        => ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            { $crate::__is_sub{} } => {
+                                ::demuncher::tail{} => ::demuncher::embrace{}
+                            }
+                        }
+                    ]
+                    => ::demuncher::join_with{,}
+                    => $crate::__as_hlist{}
+                    => ::demuncher::embrace{}
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_struct {
+    (
+        {
+            { $($services_hlist:tt)* }
+            { $($sub_contexts_hlist:tt)* }
+        } => {
+            ctx_meta: { $(#[$ctx_meta:meta])* },
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                $(#[$ctx_meta])*
+                #[allow(dead_code)]
+                $vis struct $ctx {
+                    services: $($services_hlist)*,
+                    sub_contexts: $($sub_contexts_hlist)*
+                }
+            }
+            => $($cont_args)*
         }
     };
 }
@@ -759,26 +630,6 @@ macro_rules! __is_sub {
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __is_mut {
-    (
-        { [mut $($_ignored:tt)*] } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { mut $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
 macro_rules! __is_impl {
     (
         { sub $impl:ty } => {} => $cont:path{ $($cont_args:tt)* }
@@ -807,21 +658,6 @@ macro_rules! __is_impl {
 macro_rules! __is_extern {
     (
         { extern } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __is_where {
-    (
-        { where } => {} => $cont:path{ $($cont_args:tt)* }
     ) => {
         $cont!{ {true} => $($cont_args)* }
     };
@@ -864,23 +700,697 @@ macro_rules! __is_in_braces {
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __take_impls_list {
+macro_rules! __emit_single_trait_impls {
     (
-        { $($input:tt)* } => { /* {impl} => */ $($pipe:tt)+ } => $cont:path{ $($cont_args:tt)* }
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } { $($extern_deps:tt)* } } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
     ) => {
-        $cont!{
-            { $($input)* }
-            => $crate::__for_each_impl_statement{
-                ::demuncher::fork{
-                    { ::demuncher::debrace{} => $($pipe)+ }
-                    { ::demuncher::reset{} }
+        $cont! {
+            { { $($impl_stmts)* } { $($trait_stmts)* } { $($extern_deps)* } }
+            => ::demuncher::fork_repeated{
+                {
+                    ::demuncher::take{ + + - }
+                    => ::demuncher::assert_flow{
+                        !"before __get_single_impl_trait_structs"
+                        { { { impl+ } { { @struct trait_struct }* } }* }
+                        { { { @struct trait_struct } { { impls+ }* } }* }
+                    }
+                    => $crate::__get_single_impl_trait_structs{}
+                    => ::demuncher::assert_flow{
+                        !"after __get_single_impl_trait_structs"
+                        { { impl+ } { @struct trait_struct } }*
+                    }
+                    => ::demuncher::embrace{}
+                }
+                {
+                    ::demuncher::take{ - - + }
+                    => ::demuncher::embrace{}
                 }
             }
-            => ::demuncher::skip_all_empty{}
-            => ::demuncher::join_with{,}
+            => ::demuncher::assert_flow{
+                !"single stmts + external deps before cross"
+                { { { impl+ } { @struct trait_struct } }* }
+                { { extern_deps* } }
+            }
+            => ::demuncher::cross{}
+            => ::demuncher::assert_flow{
+                !"single stmts + external deps after cross"
+                { { { impl+ } { @struct trait_struct } } { extern_deps* } }*
+            }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::fork{
+                    { ::demuncher::debrace{} }
+                    { ::demuncher::pass{} }
+                }
+                => ::demuncher::assert_flow{
+                    !"single impl stmt + external deps"
+                    { impl+ } { @struct trait_struct } { extern_deps* }
+                }
+                => __emit_single_trait_impl{ ctx: $ctx } // emitting
+            ]
+            => $($cont_args)*
+        }
+    }
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_single_trait_impl {
+    (
+        {
+            {extern}
+            {
+                multi: {},
+                mut: { $($mut:ident)? },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            { $($extern_deps:tt)* }
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                {
+                    multi: {},
+                    mut: { $($mut)? },
+                    trait: {$($trait_ty)+},
+                    trait_provider: {$($trait_provider_ty)+},
+                    into_trait: {$($into_trait_provider_ty)+}
+                }
+            } => $crate::__emit_trait_impl_from_extern_ctx{
+                ctx: $ctx
+            } => $($cont_args)*
+        }
+    };
+    (
+        {
+            {sub $impl_ty:ty}
+            {
+                multi: {},
+                mut: { $($mut:ident)? },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($extern_deps:tt)*}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                {$impl_ty}
+                {
+                    multi: {},
+                    mut: { $($mut)? },
+                    trait: {$($trait_ty)+},
+                    trait_provider: {$($trait_provider_ty)+},
+                    into_trait: {$($into_trait_provider_ty)+}
+                }
+                {$($extern_deps)*}
+            }
+            => $crate::__emit_trait_impl_from_sub_ctx{
+                ctx: $ctx
+            } => $($cont_args)*
+        }
+    };
+    (
+        {
+            {$impl_ty:ty}
+            {
+                multi: {},
+                mut: { $($mut:ident)? },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($extern_deps:tt)*}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                {$impl_ty}
+                {
+                    multi: {},
+                    mut: { $($mut)? },
+                    trait: {$($trait_ty)+},
+                    trait_provider: {$($trait_provider_ty)+},
+                    into_trait: {$($into_trait_provider_ty)+}
+                }
+                {$($extern_deps)*}
+            } => $crate::__emit_trait_impl_from_local_ctx{
+                ctx: $ctx
+            } => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_trait_impl_from_local_ctx {
+    (
+        {
+            {$impl_ty:ty}
+            {
+                multi: {},
+                mut: { Mut },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($($extern_deps:tt)+)?}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_mut_service<'s>(&'s mut self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞMutProvided>](
+                            ForwardingMutContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_service(provided_ctx)
+                    }
+                }
+                
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn into_mut_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's>
+                    where Self: 's
+                    {
+                        ::std::boxed::Box::new(
+                            MutServiceProvidedWithContext {
+                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
+                                ctx_provided: self,
+                                _service_phantom: PhantomData
+                            }
+                        )
+                    }
+                }
+            }
             => $($cont_args)*
         }
     };
+    (
+        {
+            {$impl_ty:ty}
+            {
+                multi: {},
+                mut: {},
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($($extern_deps:tt)+)?}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞProvided>](
+                            ForwardingContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+                
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn into_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's>
+                    where Self: 's
+                    {
+                        ::std::boxed::Box::new(
+                            ServiceProvidedWithContext {
+                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                ctx_provided: self,
+                                _service_phantom: PhantomData
+                            }
+                        )
+                    }
+                }
+
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞProvided>](
+                            ForwardingContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_trait_impl_from_sub_ctx {
+    (
+        {
+            {$impl_ty:ty}
+            {
+                multi: {},
+                mut: { Mut },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($($extern_deps:tt)+)?}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_mut_service<'s>(&'s mut self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞMutProvided>](
+                            ForwardingMutContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_service(provided_ctx)
+                    }
+                }
+
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn into_mut_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's>
+                    where Self: 's
+                    {
+                        let sub_ctx = [<$impl_ty ඞMutProvided>](
+                            MutSubContextProvidedWithParent {
+                                ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                                mut_ctx_getter: |parent: &mut $ctx| -> &mut $impl_ty { parent.sub_contexts.get_mut() },
+                                parent_ctx_provided: self,
+                                _sub_context_phantom: PhantomData
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_service(sub_ctx)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+    (
+        {
+            {$impl_ty:ty}
+            {
+                multi: {},
+                mut: {},
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            {$($($extern_deps:tt)+)?}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞProvided>](
+                            ForwardingContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+                
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn into_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's>
+                    where Self: 's
+                    {
+                        let sub_ctx = [<$impl_ty ඞProvided>](
+                            SubContextProvidedWithParent {
+                                ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                                parent_ctx_provided: self,
+                                _sub_context_phantom: PhantomData
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_service(sub_ctx)
+                    }
+                }
+
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞProvided>](
+                            ForwardingContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_trait_impl_from_extern_ctx {
+    (
+        { 
+            {
+                multi: {},
+                mut: { Mut },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvidedWithParent<Context = $ctx>
+                {
+                    fn get_mut_service<'s>(&'s mut self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        let provided_ctx = [<$ctx ඞMutProvided>](
+                            ForwardingMutContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_service(provided_ctx)
+                    }
+                }
+
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>
+                {
+                    fn into_mut_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's>
+                    where Self: 's
+                    {
+                        let sub_ctx = [<$impl_ty ඞMutProvided>](
+                            MutSubContextProvidedWithParent {
+                                ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                                mut_ctx_getter: |parent: &mut $ctx| -> &mut $impl_ty { parent.sub_contexts.get_mut() },
+                                parent_ctx_provided: self,
+                                _sub_context_phantom: PhantomData
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_service(sub_ctx)
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+    (
+        { 
+            {
+                multi: {},
+                mut: {},
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { 
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                where
+                    TContextProvided: ContextProvided<Context = $ctx>,
+                    TContextProvided::ParentContextProvided: $($trait_provider_ty)+
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        self.parent_ctx_provided().get_service()
+                        // let provided_ctx = [<$ctx ඞProvided>](
+                        //     ForwardingContextProvided {
+                        //         forwarded_ctx: self
+                        //     }
+                        // );
+                        // $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: MutContextProvided<Context = $ctx>,
+                    TContextProvided::ParentContextProvided: $($trait_provider_ty)+
+                {
+                    fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 's> {
+                        self.parent_ctx_provided().get_service()
+                        // let provided_ctx = [<$ctx ඞProvided>](
+                        //     ForwardingContextProvided {
+                        //         forwarded_ctx: self
+                        //     }
+                        // );
+                        // $($into_trait_provider_ty)+::into_service(provided_ctx)
+                    }
+                }
+                
+                // impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞProvided>]<TContextProvided>
+                // where
+                //     TContextProvided: ContextProvided<Context = $ctx>
+                // {
+                //     fn into_service<'s>(self) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 's>
+                //     where Self: 's
+                //     {
+                //         let sub_ctx = [<$impl_ty ඞProvided>](
+                //             SubContextProvidedWithParent {
+                //                 ctx_getter: |parent: &$ctx| -> &$impl_ty { parent.sub_contexts.get() },
+                //                 parent_ctx_provided: self,
+                //                 _sub_context_phantom: PhantomData
+                //             }
+                //         );
+                //         $($into_trait_provider_ty)+::into_service(sub_ctx)
+                //     }
+                // }
+
+                // impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                // where
+                //     TContextProvided: MutContextProvided<Context = $ctx>
+                // {
+                //     fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 's> {
+                //         let provided_ctx = [<$ctx ඞProvided>](
+                //             ForwardingContextProvided {
+                //                 forwarded_ctx: self
+                //             }
+                //         );
+                //         $($into_trait_provider_ty)+::into_service(provided_ctx)
+                //     }
+                // }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_multiple_impls_for_traits {
+    (
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } { $($extern_deps:tt)* } } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { { $($impl_stmts)* } { $($trait_stmts)* } { $($extern_deps)* } }
+            => ::demuncher::fork{
+                { ::demuncher::reset{} }
+                {
+                    ::demuncher::debrace{}
+                    => $crate::__get_multiple_impls_trait_structs{}
+                    => ::demuncher::embrace{}
+                }
+                { ::demuncher::embrace{} }
+            }
+            => ::demuncher::assert_flow{
+                !"multi stmts + external deps before cross"
+                { { { @struct trait_struct } { { impls+ }* } }* }
+                { { extern_deps* } }
+            }
+            => ::demuncher::cross{}
+            => ::demuncher::assert_flow{
+                !"multi stmts + external deps after cross"
+                { { { @struct trait_struct } { { impls+ }* } } { extern_deps* } }*
+            }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::fork{
+                    { ::demuncher::debrace{} }
+                    { ::demuncher::pass{} }
+                }
+                => ::demuncher::assert_flow{
+                    !"multi impl stmt + external deps"
+                    { @struct trait_struct } { { impls+ }* } { extern_deps* }
+                }
+                => __emit_multiple_impls_for_trait{ ctx: $ctx } // emitting
+            ]
+            => $($cont_args)*
+        }
+    }
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_multiple_impls_for_trait {
+    (
+        {
+            {
+                multi: {Multiple},
+                mut: { $($mut:tt)* },
+                trait: {$($trait_ty:tt)+},
+                trait_provider: {$($trait_provider_ty:tt)+},
+                into_trait: {$($into_trait_provider_ty:tt)+}
+            }
+            { $($impls:tt)+ }
+            {$($extern_deps:tt)*}
+        } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { $($impls)+ }
+            => [
+                ::demuncher::debrace{}
+                => $crate::__emit_item_impl{
+                    ctx: $ctx,
+                    ctx_provided: self,
+                    local_impls: local_impls,
+                    other_impls: other_impls,
+                    trait: { $($trait_ty)+ },
+                    trait_provider: { $($trait_provider_ty)+ },
+                    into_trait_provider: { $($into_trait_provider_ty)+ },
+                    service_kind: { $($mut:tt)* }
+                }
+            ]
+            => $crate::__emit_trait_multiple_impls{
+                ctx: $ctx,
+                ctx_provided: self,
+                local_impls: local_impls,
+                other_impls: other_impls,
+                trait: { $($trait_ty)+ },
+                trait_provider: { $($trait_provider_ty)+ },
+                into_trait_provider: { $($into_trait_provider_ty)+ },
+                service_kind: { $($mut)* },
+                extern_deps: { $($extern_deps)* }
+            }
+            => $($cont_args)*
+        }
+    };
+    // (
+    //     { { $($trait_head:ident)?$(::$trait_tail:ident)* } { [$($impls:tt)+] } } => {
+    //         ctx: $ctx:ident
+    //     } => $cont:path { $($cont_args:tt)* }
+    // ) => {
+    //     $cont! {
+    //         { $($impls)+ }
+    //         => ::demuncher::split_by{,}
+    //         => [
+    //             ::demuncher::debrace{}
+    //             => $crate::__emit_item_impl{
+    //                 ctx: $ctx,
+    //                 ctx_provided: self,
+    //                 local_impls: local_impls,
+    //                 other_impls: other_impls,
+    //                 trait: $($trait_head)?$(::$trait_tail)*,
+    //                 mut: {}
+    //             }
+    //         ]
+    //         => $crate::__emit_trait_multiple_impls{
+    //             ctx: $ctx,
+    //             ctx_provided: self,
+    //             local_impls: local_impls,
+    //             other_impls: other_impls,
+    //             trait: $($trait_head)?$(::$trait_tail)*
+    //         }
+    //         => $($cont_args)*
+    //     }
+    // };
+    
+    // (
+    //     { { mut $($trait:tt)+ } { sub $($impl:tt)+ } } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
+    // ) => {
+    //     $cont! {
+    //         { {$($impl)+} {$($trait)+} }
+    //         => __emit_trait_from_sub_context{ ctx: $ctx }
+    //         => $($cont_args)*
+    //     }
+    // };
+    // (
+    //     { { $($trait_head:ident)?$(::$trait_tail:ident)* } { $($impl:tt)+ } } => {
+    //         ctx: $ctx:ident
+    //     } => $cont:path { $($cont_args:tt)* }
+    // ) => {
+    //     $cont! {
+    //         { {$($impl)+} {$($trait_head)?$(::$trait_tail)*} }
+    //         => $crate::__pick_trait_impl{
+    //             ctx: $ctx
+    //         }
+    //         => $($cont_args)*
+    //     }
+    // };
 }
 
 #[macro_export]
@@ -923,6 +1433,471 @@ macro_rules! __pick_trait_impl {
 
 #[macro_export]
 #[doc(hidden)]
+macro_rules! __get_trait_stmts {
+    (
+        { $($input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { $($input)* }
+            => $crate::__for_each_trait_statement{
+                ::demuncher::fork_repeated{
+                    {
+                        $crate::__get_trait_struct_for_trait_stmt{}
+                        => ::demuncher::embrace{}
+                    }
+                    {
+                        ::demuncher::tail{}
+                        => ::demuncher::debrace{}
+                        => ::demuncher::strip_brackets{perhaps}
+                        => ::demuncher::split_by{,}
+                        => ::demuncher::embrace{}
+                    }
+                }
+                => ::demuncher::embrace{}
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_impl_stmts {
+    (
+        { $($input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { $($input)* }
+            => $crate::__for_each_impl_statement{
+                ::demuncher::fork{
+                    { ::demuncher::pass{} }
+                    {
+                        ::demuncher::debrace{perhaps}
+                        => ::demuncher::split_by{,}
+                        => ::demuncher::skip_all_empty{}
+                        => [
+                            ::demuncher::debrace{}
+                            => $crate::__get_trait_struct{}
+                            => ::demuncher::embrace{}
+                        ]
+                        => ::demuncher::embrace{}
+                    }
+                }
+                => ::demuncher::embrace{}
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_trait_struct {
+    (
+        { $($input_trait:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input_trait)* } { multi: {}, mut: {}, trait: {}, trait_provider: {}, into_trait: {} } }
+            => $crate::__set_decorators_for_trait_struct{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_trait_struct_for_trait_stmt {
+    (
+        { { $($trait:tt)* } { [ $($impls_ignored:tt)* ] } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($trait)* } { multi: {Multiple}, mut: {}, trait: {}, trait_provider: {}, into_trait: {} } }
+            => $crate::__set_decorators_for_trait_struct{}
+            => $($cont_args)*
+        }
+    };
+    (
+        { { $($trait:tt)* } { $($impl_ignored:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($trait)* } { multi: {}, mut: {}, trait: {}, trait_provider: {}, into_trait: {} } }
+            => $crate::__set_decorators_for_trait_struct{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_trait_struct_for_dep {
+    (
+        { $($trait:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($trait)* } { multi: {}, mut: {}, trait: {}, trait_provider: {}, into_trait: {} } }
+            => $crate::__move_multi_to_trait_struct{}
+            => $crate::__set_decorators_for_trait_struct{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __set_decorators_for_trait_struct {
+    (
+        {
+            { $($input_trait:tt)* }
+            { multi: $multi:tt, mut: $mut:tt, trait: $trait:tt, trait_provider: $trait_provider:tt, into_trait: $into_trait:tt }
+        }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                { $($input_trait)* }
+                { multi: $multi, mut: $mut, trait: $trait, trait_provider: $trait_provider, into_trait: $into_trait }
+            }
+            => $crate::__move_decorators_to_trait_struct{}
+            => ::demuncher::fork_repeated{
+                { ::demuncher::head{} }
+                {
+                    $crate::__get_decorated_trait{ prefix: {ඞ}, suffix: {ServiceProvider} }
+                    => ::demuncher::embrace{}
+                }
+                {
+                    $crate::__get_decorated_trait{ prefix: {ඞInto}, suffix: {ServiceProvider} }
+                    => ::demuncher::embrace{}
+                }
+                { ::demuncher::tail{} }
+            }
+            => $crate::__move_types_to_trait_struct{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_trait_provider_for_trait_struct {
+    (
+        { multi: $multi:tt, mut: $mut:tt, trait: $trait:tt, trait_provider: { $($trait_provider:tt)* } $($fields_tail:tt)* }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($trait_provider)* }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_mut_trait_struct {
+    (
+        { multi: $multi:tt, mut: {Mut} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { multi: $multi:tt, mut: {} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_multiple_trait_struct {
+    (
+        { multi: {Multiple} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { multi: {} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __move_multi_to_trait_struct {
+    (
+        { { [ $($input:tt)+ ] } { multi: $multi_ignored:tt $($fields_tail:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input)+ } { multi: {Multiple} $($fields_tail)* } }
+            => $($cont_args)*
+        }
+    };
+    (
+        { { $($input:tt)* } { multi: $multi_ignored:tt $($fields_tail:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input)+ } { multi: {} $($fields_tail)* } }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __move_decorators_to_trait_struct {
+    (
+        { { mut $($input:tt)+ } { multi: $multi:tt, mut: $mut_ignored:tt $($fields_tail:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input)+ } { multi: $multi, mut: {Mut} $($fields_tail)* } }
+            => $($cont_args)*
+        }
+    };
+    (
+        { { $($input:tt)* } { multi: $multi:tt, mut: $mut_ignored:tt $($fields_tail:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input)+ } { multi: $multi, mut: {} $($fields_tail)* } }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_decorated_trait {
+    (
+        {
+            { $($trait:tt)+ }
+            {
+                multi: { $($multi:ident)? },
+                mut: { $($mut:ident)? }
+                $($fields_tail:tt)*
+            }
+        }
+         => {
+            prefix: {$($prefix:ident)*},
+            suffix: {$($suffix:ident)*}
+        }
+         => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { {} { $($trait)+ } { $($prefix)* $($multi)? $($mut)? $($suffix)* } }
+            => $crate::__path_with_prefix_and_suffix{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __move_types_to_trait_struct {
+    (
+        {
+            { $($trait:tt)+ }
+            { $($trait_provider:tt)+ }
+            { $($into_trait:tt)+ }
+            {
+                multi: $multi:tt,
+                mut: $mut:tt,
+                trait: $trait_ignored:tt,
+                trait_provider: $trait_provider_ignored:tt,
+                into_trait: $into_trait_ignored:tt
+                $($fields_tail:tt)*
+            }
+        }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                multi: $multi,
+                mut: $mut,
+                trait: { $($trait)+ },
+                trait_provider: { $($trait_provider)+ },
+                into_trait: { $($into_trait)+ }
+                $($fields_tail)*
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_extern_provided_trait_structs {
+    (
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($impl_stmts)* } { $($trait_stmts)* } }
+            => ::demuncher::fork{
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            { ::demuncher::head{} => ::demuncher::debrace{} => $crate::__is_extern{} } => {
+                                ::demuncher::tail{}
+                                => ::demuncher::debrace{}
+                            }
+                        }
+                    ]
+                }
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            {
+                                ::demuncher::tail{}
+                                => ::demuncher::debrace{}
+                                => ::demuncher::any{ ::demuncher::debrace{} => $crate::__is_extern{} }
+                            } => {
+                                ::demuncher::head{}
+                            }
+                        }
+                    ]
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_all_provided_trait_structs {
+    (
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($impl_stmts)* } { $($trait_stmts)* } }
+            => ::demuncher::fork{
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::tail{}
+                        => ::demuncher::debrace{}
+                    ]
+                }
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::head{}
+                    ]
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+/// ## Output:
+/// `{ { { impl } { trait_struct } }* }`
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_single_impl_trait_structs {
+    (
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($impl_stmts)* } { $($trait_stmts)* } }
+            => ::demuncher::fork{
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::fork{
+                            { ::demuncher::embrace{} }
+                            { ::demuncher::pass{} }
+                        }
+                        => ::demuncher::cross{}
+                    ]
+                }
+                {
+                    ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            {
+                                ::demuncher::head{}
+                                => ::demuncher::debrace{}
+                                => $crate::__is_multiple_trait_struct{}
+                                => ::demuncher::not{}
+                            } => {
+                                ::demuncher::fork{
+                                    { ::demuncher::pass{} }
+                                    { ::demuncher::debrace{} }
+                                }
+                                => ::demuncher::swap{}
+                                => ::demuncher::embrace{}
+                            }
+                        }
+                    ]
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+/// ## Output:
+/// `{ { { trait_struct } { {impls}* } }* }`
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_multiple_impls_trait_structs {
+    (
+        { $($trait_stmts:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($trait_stmts)* }
+            => [
+                ::demuncher::when{
+                    {
+                        ::demuncher::debrace{}
+                        => ::demuncher::head{}
+                        => ::demuncher::debrace{}
+                        => $crate::__is_multiple_trait_struct{}
+                    } => {
+                        ::demuncher::pass{}
+                    }
+                }
+            ]
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_sub_ctxs {
+    (
+        { $($impl_stmts:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impl_stmts)* }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::head{}
+                => ::demuncher::debrace{}
+                => ::demuncher::when{
+                    { $crate::__is_sub{} } => {
+                        ::demuncher::tail{}
+                        => ::demuncher::embrace{}
+                    }
+                }
+            ]
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
 macro_rules! __for_each_impl_with_trait {
     (
         { $($input:tt)* } => { { /* {impl} => */ $($($include_pipe:tt)+)? } => { /* { {impl} {trait} } => */ $($($pipe:tt)+)? } } => $cont:path { $($cont_args:tt)* }
@@ -932,7 +1907,7 @@ macro_rules! __for_each_impl_with_trait {
             => $crate::__for_each_impl_statement{
                 ::demuncher::fork{
                     { ::demuncher::embrace{} }
-                    { ::demuncher::perhaps_debrace{} => ::demuncher::split_by{,} => ::demuncher::skip_if_empty{} => ::demuncher::embrace{} }
+                    { ::demuncher::debrace{perhaps} => ::demuncher::split_by{,} => ::demuncher::skip_if_empty{} => ::demuncher::embrace{} }
                 }
                 $(=> ::demuncher::when{
                     { ::demuncher::head{} => ::demuncher::debrace{} => ::demuncher::debrace{} => $($include_pipe)+ }
@@ -1064,6 +2039,31 @@ macro_rules! __emit_trait_with_multiple_impls {
     //         => $($cont_args)*
     //     }
     // };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __path_with_prefix_and_suffix {
+    (
+        { {$($prefix:ident)*} {$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+    };
+    (
+        { {$($prefix:ident)*} {::$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {::[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+    };
+    (
+        { {$($prefix:ident)*} {$($path:ident::)+$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {$($path::)+[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+    };
+    (
+        { {$($prefix:ident)*} {::$($path:ident::)+$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {::$($path::)+[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+    };
 }
 
 #[macro_export]
@@ -1440,6 +2440,85 @@ macro_rules! __emit_trait_from_sub_context {
         }
     };
 }
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_sub_ctx_provider_impls {
+    (
+        { { $($impl_stmts:tt)* } { $($trait_stmts:tt)* } { $($extern_deps:tt)* } } => {
+            ctx: $ctx:ident
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont! {
+            { { $($impl_stmts)* } { $($trait_stmts)* } { $($extern_deps)* } }
+            => ::demuncher::fork_repeated{
+                {
+                    ::demuncher::take{ + - - }
+                    => ::demuncher::debrace{}
+                    => $crate::__get_sub_ctxs{}
+                    => ::demuncher::assert_flow{
+                        !"sub contexts"
+                        { impl+ }*
+                    }
+                    => ::demuncher::embrace{}
+                }
+                {
+                    ::demuncher::fork_repeated{
+                        {
+                            ::demuncher::take{ - - + }
+                        }
+                        {
+                            ::demuncher::take{ + + - }
+                            => $crate::__get_all_provided_trait_structs{}
+                            => ::demuncher::fork_repeated{
+                                {
+                                    $crate::__trait_structs_as_deps{}
+                                    => ::demuncher::embrace{}
+                                }
+                                {
+                                    [
+                                        ::demuncher::debrace{}
+                                        => ::demuncher::when{
+                                            { $crate::__is_mut_trait_struct{} => ::demuncher::not{} } => {
+                                                ::demuncher::embrace{}
+                                            }
+                                        }
+                                    ]
+                                    => $crate::__trait_structs_as_deps{}
+                                    => ::demuncher::embrace{}
+                                }
+                            }
+                        }
+                    }
+                    => ::demuncher::embrace{}
+                    => ::demuncher::embrace{}
+                }
+            }
+            => ::demuncher::assert_flow{
+                !"sub contexts + external deps + all deps + non-mut deps before cross"
+                { { impl+ }* }
+                { { { extern_deps* } { all_deps* } { non_mut_deps* } } }
+            }
+            => ::demuncher::cross{}
+            => ::demuncher::assert_flow{
+                !"sub contexts + external deps + all deps + non-mut deps after cross"
+                { { impl+ } { { extern_deps* } { all_deps* } { non_mut_deps* } } }*
+            }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::fork{
+                    { ::demuncher::pass{} }
+                    { ::demuncher::debrace{} }
+                }
+                => ::demuncher::assert_flow{
+                    !"sub contexts + external deps + all deps + non-mut deps"
+                    { impl+ } { extern_deps* } { all_deps* } { non_mut_deps* }
+                }
+                => $crate::__emit_sub_ctx_provider_impl{ ctx: $ctx } // emitting
+            ]
+            => $($cont_args)*
+        }
+    }
+}
 
 #[macro_export]
 #[doc(hidden)]
@@ -1666,7 +2745,7 @@ macro_rules! __emit_item_impl {
             trait: { $($trait_ty:tt)+ },
             trait_provider: { $($trait_provider_ty:tt)+ },
             into_trait_provider: { $($into_trait_provider_ty:tt)+ },
-            service_kind: { mut }
+            service_kind: { Mut }
         } => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont! {
@@ -1751,7 +2830,7 @@ macro_rules! __emit_trait_multiple_impls {
             trait: { $($trait_ty:tt)+ },
             trait_provider: { $($trait_provider_ty:tt)+ },
             into_trait_provider: { $($into_trait_provider_ty:tt)+ },
-            service_kind: { mut },
+            service_kind: { Mut },
             extern_deps: { $($($extern_deps:tt)+)? }
         } => $cont:path { $($cont_args:tt)* }
     ) => {
@@ -1886,54 +2965,6 @@ macro_rules! __emit_trait_multiple_impls {
     };
 }
 
-// #[macro_export]
-// #[doc(hidden)]
-// macro_rules! __emit_item_trait_from_sub_context {
-//     (
-//         { {$impl_ty:ty} {$($trait_head:ident)?$(::$trait_tail:ident)*} } => { ctx: $ctx:ident } => $cont:path { $($cont_args:tt)* }
-//     ) => {
-//         $cont! {
-//             { 
-//                 ::std::boxed::Box::new(ServiceProvidedWithContext {
-//                     ctx: self,
-//                     data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get() },
-//                 }),
-//                 impl<'c> ServiceProvider<'c, dyn $trait_ty + 'c> for $ctx {
-//                     fn get_service(&'c self) -> ::std::boxed::Box<dyn $trait_ty + 'c> {
-//                         (self.sub_contexts.get() as &$impl_ty).get_service()
-//                     }
-//                 }
-//             }
-//             => $($cont_args)*
-//         }
-//     };
-// }
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __prepend_service_kind {
-    (
-        { [mut $($trait_ty:tt)+] } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ { { [mut] } { [mut $($trait_ty)+] } } => $($cont_args)* }
-    };
-    (
-        { [$($trait_ty:tt)+] } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ { { [] } { [$($trait_ty)+] } } => $($cont_args)* }
-    };
-    (
-        { mut $($trait_ty:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ { { mut } { mut $($trait_ty)+ } } => $($cont_args)* }
-    };
-    (
-        { $($trait_ty:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ { {} { $($trait_ty)+ } } => $($cont_args)* }
-    };
-}
-
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __split_service_kind {
@@ -1987,82 +3018,6 @@ macro_rules! __repeat_with_suffix {
     };
 }
 
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __append_service_provider {
-    (
-        { { [mut] } { $($trait_ty:tt)+ } } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            { { mut } { $($trait_ty)+ } }
-            => ::demuncher::fork{
-                { ::demuncher::pass{} }
-                {
-                    ::demuncher::repeat{ 1 2 }
-                    => ::demuncher::fork {
-                        { $crate::__repeat_with_suffix{ ඞMultipleMutServiceProvider } }
-                        { ::demuncher::debrace{} => $crate::__path_with_suffix{ ඞIntoMultipleMutServiceProvider } => ::demuncher::embrace{} }
-                    }
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-    (
-        { { [] } { $($trait_ty:tt)+ } } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            { {} { $($trait_ty)+ } }
-            => ::demuncher::fork{
-                { ::demuncher::pass{} }
-                {
-                    ::demuncher::repeat{ 1 2 }
-                    => ::demuncher::fork {
-                        { $crate::__repeat_with_suffix{ ඞMultipleServiceProvider } }
-                        { ::demuncher::debrace{} => $crate::__path_with_suffix{ ඞIntoMultipleServiceProvider } => ::demuncher::embrace{} }
-                    }
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-    (
-        { { mut } { $($trait_ty:tt)+ } } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            { { mut } { $($trait_ty)+ } }
-            => ::demuncher::fork{
-                { ::demuncher::pass{} }
-                {
-                    ::demuncher::repeat{ 1 2 }
-                    => ::demuncher::fork {
-                        { $crate::__repeat_with_suffix{ ඞMutServiceProvider } }
-                        { ::demuncher::debrace{} => $crate::__path_with_suffix{ ඞIntoMutServiceProvider } => ::demuncher::embrace{} }
-                    }
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-    (
-        { {} { $($trait_ty:tt)+ } } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            { {} { $($trait_ty)+ } }
-            => ::demuncher::fork{
-                { ::demuncher::pass{} }
-                {
-                    ::demuncher::repeat{ 1 2 }
-                    => ::demuncher::fork {
-                        { $crate::__repeat_with_suffix{ ඞServiceProvider } }
-                        { ::demuncher::debrace{} => $crate::__path_with_suffix{ ඞIntoServiceProvider } => ::demuncher::embrace{} }
-                    }
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-}
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __emit_dependant_trait_constraint {
@@ -2322,135 +3277,18 @@ macro_rules! __emit_impl_mut_service {
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __emit_extern_deps {
+macro_rules! __trait_structs_as_deps {
     (
-        { { $($impls:tt)* } { $($traits:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
+        { $($trait_structs:tt)* } => {} => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
-            { { $($impls)* } { $($traits)* } }
-            => ::demuncher::fork{
-                {
-                    ::demuncher::debrace{}
-                    => $crate::__for_each_impl_with_trait{
-                        { __is_extern{} } => {
-                            ::demuncher::tail{}
-                            => ::demuncher::debrace{}
-                            => ::demuncher::split_by{,}
-                            => [
-                                ::demuncher::debrace{}
-                                => $crate::__emit_dependant_trait_constraint{}
-                                => ::demuncher::embrace{}
-                            ]
-                        }
-                    }
-                }
-                {
-                    ::demuncher::debrace{}
-                    => $crate::__for_each_trait_statement{
-                        ::demuncher::when{
-                            { ::demuncher::tail{} => ::demuncher::debrace{} => $crate::__is_multiple{} }=> {
-                                ::demuncher::when{
-                                    {
-                                        ::demuncher::tail{}
-                                        => ::demuncher::debrace{}
-                                        => ::demuncher::strip_brackets{}
-                                        => ::demuncher::split_by{,}
-                                        => ::demuncher::any{ ::demuncher::debrace{} => $crate::__is_extern{} }
-                                    } => {
-                                        ::demuncher::head{}
-                                        => ::demuncher::debrace{}
-                                        => ::demuncher::in_brackets{}
-                                        => $crate::__emit_dependant_trait_constraint{}
-                                        => ::demuncher::embrace{}
-                                    } else {
-                                        ::demuncher::reset{}
-                                    }
-                                }
-                            } else {
-                                ::demuncher::when{
-                                    { ::demuncher::tail{} => ::demuncher::debrace{} => $crate::__is_extern{} } => {
-                                        ::demuncher::head{}
-                                        => ::demuncher::debrace{}
-                                        => $crate::__emit_dependant_trait_constraint{}
-                                        => ::demuncher::embrace{}
-                                    } else {
-                                        ::demuncher::reset{}
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            => ::demuncher::skip_all_empty{}
-            => ::demuncher::join_with{+}
-            => $($cont_args)*
-        }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __emit_deps_all_along_no_mut {
-    (
-        { { $($impls:tt)* } { $($traits:tt)* } } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            { { $($impls)* } { $($traits)* } }
-            => ::demuncher::fork{
-                {
-                    ::demuncher::debrace{}
-                    => $crate::__for_each_impl_with_trait{
-                        {} => {
-                            ::demuncher::tail{}
-                            => ::demuncher::debrace{}
-                            => ::demuncher::split_by{,}
-                            => [
-                                ::demuncher::debrace{}
-                                => ::demuncher::when{
-                                    { $crate::__is_mut{} } => {
-                                        $crate::__emit_dependant_trait_constraint{}
-                                        => ::demuncher::embrace{}
-                                    } else {
-                                        $crate::__emit_dependant_trait_constraint{}
-                                        => ::demuncher::repeat{ {} {} }
-                                    }
-                                }
-                                => ::demuncher::embrace{}
-                            ]
-                        }
-                    }
-                }
-                {
-                    ::demuncher::debrace{}
-                    => $crate::__for_each_trait_statement{
-                        ::demuncher::when{
-                            { ::demuncher::tail{} => ::demuncher::debrace{} => $crate::__is_multiple{} }=> {
-                                ::demuncher::head{} => ::demuncher::debrace{} => ::demuncher::in_brackets{}
-                            } else {
-                                ::demuncher::head{} => ::demuncher::debrace{}
-                            }
-                        }
-                        => ::demuncher::when{
-                            { $crate::__is_mut{} } => {
-                                $crate::__emit_dependant_trait_constraint{}
-                                => ::demuncher::embrace{}
-                            } else {
-                                $crate::__emit_dependant_trait_constraint{}
-                                => ::demuncher::repeat{ {} {} }
-                            }
-                        }
-                        => ::demuncher::embrace{}
-                    }
-                }
-            }
-            => ::demuncher::transpose{}
+            { $($trait_structs)* }
             => [
                 ::demuncher::debrace{}
-                => ::demuncher::skip_all_empty{}
-                => ::demuncher::join_with{+}
+                => $crate::__get_trait_provider_for_trait_struct{}
                 => ::demuncher::embrace{}
             ]
+            => ::demuncher::join_with{+}
             => $($cont_args)*
         }
     };
