@@ -4,9 +4,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+// cSpell: ignoreRegExp ඞ
+
 use std::marker::PhantomData;
 use itertools::{FoldWhile::{self, Continue, Done}, Itertools};
-use paste::paste;
 
 /// A type-level function `'j -> Item<'j>`: the family of item types a `Seq`
 /// can yield, one per (per-call) lifetime `'j`. The GAT lives HERE rather than
@@ -240,26 +241,6 @@ where
     }
 }
 
-struct EnumerateSeq<SourceSeq> {
-    source: SourceSeq,
-}
-
-impl<'i, SourceSeq> Seq<'i> for EnumerateSeq<SourceSeq>
-where
-    SourceSeq: Seq<'i>,
-{
-    type ItemGat = Indexed<SourceSeq::ItemGat>;
-
-    fn for_each_while(self, mut op: impl for<'j> FnMut((usize, <SourceSeq::ItemGat as SeqGat>::Item<'j>)) -> bool) -> bool {
-        let mut idx = 0;
-        self.source.for_each_while(|item| {
-            let i = idx;
-            idx += 1;
-            op((i, item))
-        })
-    }
-}
-
 pub trait IntoSeq<TItem> {
     fn into_seq<'i>(self) -> impl Seq<'i, ItemGat = Owned<TItem>>;
 }
@@ -292,7 +273,7 @@ macro_rules! def_seq_gat_for_multi_trait {
     ($trait_ty:ident) => {
         ::paste::paste! {
             struct [<$trait_ty ඞGat>];
-            impl super::SeqGat for [<$trait_ty ඞGat>] {
+            impl $crate::visiting::SeqGat for [<$trait_ty ඞGat>] {
                 type Item<'j> = Box<dyn $trait_ty + 'j>;
             }
         }
@@ -307,9 +288,7 @@ macro_rules! seq_gat_for_multi_trait {
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
-
-    use super::{Boxed, DynSeq, Emit, IntoSeq, Owned, Seq, SeqGat};
+    use super::*;
 
     #[test]
     fn map_vec_with_external_closure() {

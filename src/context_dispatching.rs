@@ -4,10 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{any::Any, marker::PhantomData};
-use demuncher::*;
-use itertools::{FoldWhile::{self, Continue, Done}, Itertools, WhileSome};
-use crate::visiting::{Boxed, DynSeq, Emit, IntoSeq, Seq, SeqGat};
+// cSpell: ignoreRegExp ඞ
+
+pub use crate::visiting::*;
+use std::{marker::PhantomData};
+//use crate::visiting::{Boxed, DynSeq, Emit, IntoSeq, Seq, SeqGat};
 
 pub trait ServiceProvidedData<ServiceData> {
     fn data(&self) -> &ServiceData;
@@ -435,6 +436,7 @@ macro_rules! def_service {
         }
 
         ::paste::paste!{
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞServiceProvider>] {
                 fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $trait_ty + 's>;
 
@@ -443,10 +445,12 @@ macro_rules! def_service {
                 }
             }
             
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞIntoServiceProvider>]: [<$trait_ty ඞServiceProvider>] {
                 fn into_service<'s>(self) -> ::std::boxed::Box<dyn $trait_ty + 's> where Self: 's;
             }
 
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞMutServiceProvider>] {
                 fn get_mut_service<'s>(&'s mut self) -> ::std::boxed::Box<dyn $trait_ty + 's>;
 
@@ -455,32 +459,37 @@ macro_rules! def_service {
                 }
             }
             
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞIntoMutServiceProvider>]: [<$trait_ty ඞMutServiceProvider>] {
                 fn into_mut_service<'s>(self) -> ::std::boxed::Box<dyn $trait_ty + 's> where Self: 's;
             }
 
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞMultipleServiceProvider>] {
-                fn get_services<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)>;
+                fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)>;
 
-                fn [<iter_ $name>]<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
+                fn [<iter_ $name>]<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
                     self.get_services()
                 }
             }
             
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞIntoMultipleServiceProvider>]: [<$trait_ty ඞMultipleServiceProvider>] {
-                fn into_services<'s>(self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
+                fn into_services<'s>(self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
             }
 
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞMultipleMutServiceProvider>] {
-                fn get_mut_services<'s>(&'s mut self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)>;
+                fn get_mut_services<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)>;
 
-                fn [<iter_mut_ $name>]<'s>(&'s mut self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
+                fn [<iter_mut_ $name>]<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
                     self.get_mut_services()
                 }
             }
             
+            #[allow(dead_code)]
             $vis trait [<$trait_ty ඞIntoMultipleMutServiceProvider>]: [<$trait_ty ඞMultipleMutServiceProvider>] {
-                fn into_mut_services<'s>(self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
+                fn into_mut_services<'s>(self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
             }
 
             $crate::def_seq_gat_for_multi_trait!($trait_ty);
@@ -2530,6 +2539,7 @@ macro_rules! __emit_sub_ctx_provider_impl {
     ) => {
         $cont! {
             { 
+                #[allow(refining_impl_trait)]
                 impl<TContextProvided> [<$impl_ty ඞSubContextProvider>] for [<$ctx ඞProvided>]<TContextProvided>
                 where
                     TContextProvided: ContextProvided<Context = $ctx>
@@ -2551,6 +2561,7 @@ macro_rules! __emit_sub_ctx_provider_impl {
                     }
                 }
 
+                #[allow(refining_impl_trait)]
                 impl<TContextProvided> [<$impl_ty ඞMutSubContextProvider>] for [<$ctx ඞMutProvided>]<TContextProvided>
                 where
                     TContextProvided: MutContextProvided<Context = $ctx>
@@ -2872,7 +2883,7 @@ macro_rules! __emit_trait_multiple_impls {
                     TContextProvided: ContextProvided<Context = $ctx>
                     $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
                 {
-                    fn get_services<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
+                    fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
                         let provided_ctx = [<$ctx ඞProvided>](
                             ForwardingContextProvided {
                                 forwarded_ctx: self
@@ -2887,7 +2898,7 @@ macro_rules! __emit_trait_multiple_impls {
                     TContextProvided: ContextProvided<Context = $ctx>
                     $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
                 {
-                    fn into_services<'s>(mut $ctx_provided) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)>
+                    fn into_services<'s>(mut $ctx_provided) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)>
                     where Self: 's
                     {
                         // let mut $local_impls: Vec<Box<dyn for<'a> FnOnce(&'a Self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 'a>>> = vec![];
@@ -2905,6 +2916,8 @@ macro_rules! __emit_trait_multiple_impls {
                         //     f(&$ctx_provided)
                         // })
                         use ::std::{vec::Vec, vec, boxed::Box};
+                        use $crate::visiting::{Seq, DynSeq, Emit, Boxed, IntoSeq};
+
                         let mut $local_impls:
                             Vec<
                                 Box<
@@ -2950,7 +2963,7 @@ macro_rules! __emit_trait_multiple_impls {
                     TContextProvided: MutContextProvided<Context = $ctx>
                     $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
                 {
-                    fn get_services<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
+                    fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
                         let provided_ctx = [<$ctx ඞProvided>](
                             ForwardingContextProvided {
                                 forwarded_ctx: self
@@ -3177,7 +3190,7 @@ macro_rules! __emit_dependant_multiple_service_trait_impl {
                     TContextProvided: ContextProvided + $($dep_trait_provider)+,
                     DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
                 {
-                    fn get_services<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($dep_trait)+)> {
+                    fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($dep_trait)+)> {
                         self.ctx_provided.get_services()
                     }
                 }
@@ -3189,7 +3202,7 @@ macro_rules! __emit_dependant_multiple_service_trait_impl {
                     MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
                     DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
                 {
-                    fn get_services<'s>(&'s self) -> impl Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($dep_trait)+)> {
+                    fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($dep_trait)+)> {
                         self.ctx_provided.get_services()
                     }
                 }
@@ -3518,6 +3531,7 @@ macro_rules! __emit_ctx_provided {
                     }
                 }
 
+                #[allow(dead_code)]
                 $vis trait [<$ctx ඞSubContextProvider>] {
                     fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>>;
 
@@ -3526,6 +3540,7 @@ macro_rules! __emit_ctx_provided {
                     }
                 }
 
+                #[allow(dead_code)]
                 $vis trait [<$ctx ඞMutSubContextProvider>] {
                     fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>>;
 
@@ -3600,6 +3615,7 @@ macro_rules! __emit_ctx_provided {
                 }
 
                 impl $ctx {
+                    #[allow(dead_code)]
                     pub fn provide(&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx>> {
                         [<$ctx ඞProvided>](
                             StartContextProvided {
@@ -3608,6 +3624,7 @@ macro_rules! __emit_ctx_provided {
                         )
                     }
 
+                    #[allow(dead_code)]
                     pub fn provide_mut(&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx>> {
                         [<$ctx ඞMutProvided>](
                             StartMutContextProvided {
@@ -3619,6 +3636,7 @@ macro_rules! __emit_ctx_provided {
                 }
 
                 $vis trait [<$ctx ඞSubContextProvider>] {
+                    #[allow(refining_impl_trait)]
                     fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx>>;
 
                     fn [<get_ $ctx_label>](&self) -> [<$ctx ඞProvided>]<impl ContextProvided<Context = $ctx>> {
@@ -3627,6 +3645,7 @@ macro_rules! __emit_ctx_provided {
                 }
 
                 $vis trait [<$ctx ඞMutSubContextProvider>] {
+                    #[allow(refining_impl_trait)]
                     fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx>>;
 
                     fn [<get_mut_ $ctx_label>](&mut self) -> [<$ctx ඞMutProvided>]<impl MutContextProvided<Context = $ctx>> {

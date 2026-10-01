@@ -6,5 +6,5 @@
 
 #![recursion_limit = "16384"]
 
-mod context_dispatching;
-mod visiting;
+pub mod context_dispatching;
+pub mod visiting;
