@@ -23,9 +23,9 @@ where
     TContextProvided: ContextProvided,
     DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
 {
-    data_getter: DataGetter,
-    ctx_provided: TContextProvided,
-    _service_phantom: PhantomData<ServiceData>
+    pub data_getter: DataGetter,
+    pub ctx_provided: TContextProvided,
+    pub _service_phantom: PhantomData<ServiceData>
 }
 
 impl<ServiceData, TContextProvided, DataGetter> ServiceProvidedData<ServiceData>
@@ -45,10 +45,10 @@ where
     MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceData,
     DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
 {
-    data_getter: DataGetter,
-    mut_data_getter: MutDataGetter,
-    ctx_provided: TContextProvided,
-    _service_phantom: PhantomData<ServiceData>
+    pub data_getter: DataGetter,
+    pub mut_data_getter: MutDataGetter,
+    pub ctx_provided: TContextProvided,
+    pub _service_phantom: PhantomData<ServiceData>
 }
 
 impl<ServiceData, TContextProvided, MutDataGetter, DataGetter> ServiceProvidedData<ServiceData>
@@ -330,8 +330,8 @@ macro_rules! service_context {
             }
             => ::demuncher::assert_flow{
                 !"statements"
-                { { { impl+ } { { @struct trait_struct }* } }* }
-                { { { @struct trait_struct } { { impls+ }* } }* }
+                { { { @match $crate::__is_impl_struct } { { @match $crate::__is_trait_struct }* } }* }
+                { { { @match $crate::__is_trait_struct } { { @match $crate::__is_impl_struct }* } }* }
             }
             => ::demuncher::fork_repeated{
                 {
@@ -345,19 +345,27 @@ macro_rules! service_context {
                     }
                 }
                 {
+                    ::demuncher::head{}
+                    => ::demuncher::debrace{}
+                    => $crate::__emit_service_ctx_builder{
+                        vis: { $vis },
+                        ctx: { $ctx }
+                    }
+                }
+                {
                     ::demuncher::fork_repeated{
                         { ::demuncher::pass{} }
                         {
                             $crate::__get_extern_provided_trait_structs{}
-                            => ::demuncher::assert_flow{ !"extern trait structs" {@struct trait_struct}* }
+                            => ::demuncher::assert_flow{ !"extern trait structs" {@match $crate::__is_trait_struct}* }
                             => $crate::__trait_structs_as_deps{}
                             => ::demuncher::embrace{}
                         }
                     }
                     => ::demuncher::assert_flow{
                         !"stmts + external deps"
-                        { { { impl+ } { { @struct trait_struct }* } }* }
-                        { { { @struct trait_struct } { { impls+ }* } }* }
+                        { { { @match $crate::__is_impl_struct } { { @match $crate::__is_trait_struct }* } }* }
+                        { { { @match $crate::__is_trait_struct } { { impls+ }* } }* }
                         { extern_deps* }
                     }
                     => ::demuncher::fork_repeated{
@@ -532,8 +540,9 @@ macro_rules! __get_service_ctx_hlists {
                         => ::demuncher::head{}
                         => ::demuncher::debrace{}
                         => ::demuncher::when{
-                            { $crate::__is_impl{} } => {
-                                ::demuncher::embrace{}
+                            { $crate::__is_simple_impl_struct{} } => {
+                                $crate::__get_impl_ty_for_impl_struct{}
+                                => ::demuncher::embrace{}
                             }
                         }
                     ]
@@ -548,8 +557,9 @@ macro_rules! __get_service_ctx_hlists {
                         => ::demuncher::head{}
                         => ::demuncher::debrace{}
                         => ::demuncher::when{
-                            { $crate::__is_sub{} } => {
-                                ::demuncher::tail{} => ::demuncher::embrace{}
+                            { $crate::__is_sub_impl_struct{} } => {
+                                $crate::__get_impl_ty_for_impl_struct{}
+                                => ::demuncher::embrace{}
                             }
                         }
                     ]
@@ -592,6 +602,294 @@ macro_rules! __emit_service_ctx_struct {
 
 #[macro_export]
 #[doc(hidden)]
+macro_rules! __emit_service_ctx_builder {
+    (
+        { $($impl_stmts:tt)* } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impl_stmts)* }
+            => ::demuncher::assert_flow{ !"+__emit_service_ctx_builder" { { @match $crate::__is_impl_struct } { { @match $crate::__is_trait_struct }* } }* }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::head{}
+            ]
+            => ::demuncher::fork_repeated{
+                { $crate::__get_service_ctx_builder_mandatory_fields{} => ::demuncher::embrace{} }
+                { $crate::__get_service_ctx_builder_optional_fields{} => ::demuncher::embrace{} }
+                { ::demuncher::embrace{} }
+            }
+            => ::demuncher::fork_repeated{
+                {
+                    ::demuncher::take{ + + }
+                    => ::demuncher::skip_all_empty{}
+                    => ::demuncher::join_with{,}
+                    => $crate::__emit_service_ctx_builder_struct{ vis: {$vis}, ctx: {$ctx} }
+                }
+                {
+                    ::demuncher::take{ + - + }
+                    => ::demuncher::fork{
+                        { ::demuncher::pass{} }
+                        {
+                            ::demuncher::debrace{}
+                            => $crate::__get_service_ctx_builder_field_initializers{}
+                            => ::demuncher::embrace{}
+                        }
+                    }
+                    => $crate::__emit_service_ctx_builder_init{ vis: {$vis}, ctx: {$ctx} }
+                }
+                {
+                    ::demuncher::take{ - - + }
+                    => ::demuncher::debrace{}
+                    => $crate::__emit_service_ctx_builder_build{ vis: {$vis}, ctx: {$ctx} }
+                }
+                {
+                    ::demuncher::take{ - - + }
+                    => ::demuncher::debrace{}
+                    => [
+                        ::demuncher::debrace{}
+                        => $crate::__emit_service_ctx_builder_setter{ vis: {$vis}, ctx: {$ctx} }
+                    ]
+
+                }
+            }
+            // => ::demuncher::trace_flow{"-__emit_service_ctx_builder: "}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_service_ctx_builder_mandatory_fields {
+    (
+        { $($impls:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impls)* }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::assert_flow{ !"__get_service_ctx_builder_mandatory_fields each" @match $crate::__is_impl_struct }
+                => ::demuncher::when{
+                    { $crate::__is_mandatory_impl_struct{} } => {
+                        $crate::__get_field_for_impl_struct{}
+                        => ::demuncher::embrace{}
+                    }
+                }
+            ]
+            => ::demuncher::join_with{,}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_service_ctx_builder_optional_fields {
+    (
+        { $($impls:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impls)* }
+            => [
+                ::demuncher::debrace{}
+                => ::demuncher::when{
+                    { $crate::__is_optional_impl_struct{} } => {
+                        $crate::__get_field_for_impl_struct{}
+                        => ::demuncher::embrace{}
+                    }
+                }
+            ]
+            => ::demuncher::join_with{,}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_service_ctx_builder_field_initializers {
+    (
+        { $($impls:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impls)* }
+            => [
+                ::demuncher::debrace{}
+                => $crate::__get_init_for_impl_struct{}
+            ]
+            => ::demuncher::join_with{,}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_builder_struct {
+    (
+        { $($fields:tt)* } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                $vis struct [<$ctx ඞBuilder>] {
+                    $($fields)*
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_builder_init {
+    (
+        {
+            { $($mandatory_fields:tt)* }
+            { $($field_initializers:tt)* }
+        } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                impl $ctx {
+                    $vis fn init($($mandatory_fields)*) -> [<$ctx ඞBuilder>] {
+                        [<$ctx ඞBuilder>] {
+                            $($field_initializers)*
+                        }
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_builder_build {
+    (
+        { $($impls:tt)* } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($impls)* }
+            => ::demuncher::fork_repeated{
+                { 
+                    [
+                        ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            { $crate::__is_simple_impl_struct{} } => {
+                                $crate::__get_build_for_impl_struct{ self: { self } }
+                                => ::demuncher::embrace{}
+                            }
+                        }
+                    ]
+                    => ::demuncher::join_with{,}
+                    => ::demuncher::embrace{}
+                }
+                {
+                    [
+                        ::demuncher::debrace{}
+                        => ::demuncher::when{
+                            { $crate::__is_sub_impl_struct{} } => {
+                                $crate::__get_build_for_impl_struct{ self: { self } }
+                                => ::demuncher::embrace{}
+                            }
+                        }
+                    ]
+                    => ::demuncher::join_with{,}
+                    => ::demuncher::embrace{}
+                }
+            }
+            => $crate::__emit_service_ctx_builder_build_impl{ vis: {$vis}, ctx: {$ctx}, self: {self} }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_builder_build_impl {
+    (
+        {
+            { $($services_hlist_initializers:tt)* }
+            { $($sub_contexts_hlist_initializers:tt)* }
+        } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident },
+            self: { $self:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                impl [<$ctx ඞBuilder>] {
+                    $vis fn build($self) -> $ctx {
+                        $ctx {
+                            services: ::frunk::hlist!{ $($services_hlist_initializers)* },
+                            sub_contexts: ::frunk::hlist!{ $($sub_contexts_hlist_initializers)* },
+                        }
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_service_ctx_builder_setter {
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $any_kind:tt,
+            label: { $label:ident },
+            default: {true}
+        } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                impl [<$ctx ඞBuilder>] {
+                    $vis fn [<set_ $label>](mut self, value: $($impl_ty)+) -> Self {
+                        self.$label = ::std::option::Option::Some(value);
+                        self
+                    }
+                }
+            }
+            => $($cont_args)*
+        }
+    };
+    (
+        {
+            impl_ty: $any_impl_ty:tt,
+            kind: $any_kind:tt,
+            label: $any_label:tt,
+            default: $any_default:tt
+        } => {
+            vis: { $vis:vis },
+            ctx: { $ctx:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{{} => $($cont_args)*}
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
 macro_rules! __as_hlist {
     (
         { $($input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
@@ -619,76 +917,6 @@ macro_rules! __for_each_impl_statement {
             ]
             => $($cont_args)*
         }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __is_sub {
-    (
-        { sub $impl:ty } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __is_impl {
-    (
-        { sub $impl:ty } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-    (
-        { extern } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-    (
-        { $impl:ty } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __is_extern {
-    (
-        { extern } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
-    };
-}
-
-#[macro_export]
-#[doc(hidden)]
-macro_rules! __is_multiple {
-    (
-        { [ $($_ignored:tt)* ] } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {true} => $($cont_args)* }
-    };
-    (
-        { $($_ignored:tt)* } => {} => $cont:path{ $($cont_args:tt)* }
-    ) => {
-        $cont!{ {false} => $($cont_args)* }
     };
 }
 
@@ -722,13 +950,13 @@ macro_rules! __emit_single_trait_impls {
                     ::demuncher::take{ + + - }
                     => ::demuncher::assert_flow{
                         !"before __get_single_impl_trait_structs"
-                        { { { impl+ } { { @struct trait_struct }* } }* }
-                        { { { @struct trait_struct } { { impls+ }* } }* }
+                        { { { @match $crate::__is_impl_struct } { { @match $crate::__is_trait_struct }* } }* }
+                        { { { @match $crate::__is_trait_struct } { { @match $crate::__is_impl_struct }* } }* }
                     }
                     => $crate::__get_single_impl_trait_structs{}
                     => ::demuncher::assert_flow{
                         !"after __get_single_impl_trait_structs"
-                        { { impl+ } { @struct trait_struct } }*
+                        { { @match $crate::__is_impl_struct } { @match $crate::__is_trait_struct } }*
                     }
                     => ::demuncher::embrace{}
                 }
@@ -739,13 +967,13 @@ macro_rules! __emit_single_trait_impls {
             }
             => ::demuncher::assert_flow{
                 !"single stmts + external deps before cross"
-                { { { impl+ } { @struct trait_struct } }* }
+                { { { @match $crate::__is_impl_struct } { @match $crate::__is_trait_struct } }* }
                 { { extern_deps* } }
             }
             => ::demuncher::cross{}
             => ::demuncher::assert_flow{
                 !"single stmts + external deps after cross"
-                { { { impl+ } { @struct trait_struct } } { extern_deps* } }*
+                { { { @match $crate::__is_impl_struct } { @match $crate::__is_trait_struct } } { extern_deps* } }*
             }
             => [
                 ::demuncher::debrace{}
@@ -755,7 +983,7 @@ macro_rules! __emit_single_trait_impls {
                 }
                 => ::demuncher::assert_flow{
                     !"single impl stmt + external deps"
-                    { impl+ } { @struct trait_struct } { extern_deps* }
+                    { @match $crate::__is_impl_struct } { @match $crate::__is_trait_struct } { extern_deps* }
                 }
                 => __emit_single_trait_impl{ ctx: $ctx } // emitting
             ]
@@ -769,7 +997,11 @@ macro_rules! __emit_single_trait_impls {
 macro_rules! __emit_single_trait_impl {
     (
         {
-            {extern}
+            {
+                impl_ty: $impl_ty_ignored:tt,
+                kind: {extern}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: { $($mut:ident)? },
@@ -798,7 +1030,11 @@ macro_rules! __emit_single_trait_impl {
     };
     (
         {
-            {sub $impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {sub}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: { $($mut:ident)? },
@@ -813,7 +1049,11 @@ macro_rules! __emit_single_trait_impl {
     ) => {
         $cont!{
             {
-                {$impl_ty}
+                {
+                    impl_ty: { $impl_ty },
+                    kind: {sub}
+                    $($impl_tail)*
+                }
                 {
                     multi: {},
                     mut: { $($mut)? },
@@ -830,7 +1070,11 @@ macro_rules! __emit_single_trait_impl {
     };
     (
         {
-            {$impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: { $($mut:ident)? },
@@ -845,7 +1089,11 @@ macro_rules! __emit_single_trait_impl {
     ) => {
         $cont!{
             {
-                {$impl_ty}
+                {
+                    impl_ty: { $impl_ty },
+                    kind: {}
+                    $($impl_tail)*
+                }
                 {
                     multi: {},
                     mut: { $($mut)? },
@@ -866,7 +1114,11 @@ macro_rules! __emit_single_trait_impl {
 macro_rules! __emit_trait_impl_from_local_ctx {
     (
         {
-            {$impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: { Mut },
@@ -920,7 +1172,11 @@ macro_rules! __emit_trait_impl_from_local_ctx {
     };
     (
         {
-            {$impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: {},
@@ -993,7 +1249,11 @@ macro_rules! __emit_trait_impl_from_local_ctx {
 macro_rules! __emit_trait_impl_from_sub_ctx {
     (
         {
-            {$impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {sub}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: { Mut },
@@ -1048,7 +1308,11 @@ macro_rules! __emit_trait_impl_from_sub_ctx {
     };
     (
         {
-            {$impl_ty:ty}
+            {
+                impl_ty: { $impl_ty:ty },
+                kind: {sub}
+                $($impl_tail:tt)*
+            }
             {
                 multi: {},
                 mut: {},
@@ -1276,13 +1540,13 @@ macro_rules! __emit_multiple_impls_for_traits {
             }
             => ::demuncher::assert_flow{
                 !"multi stmts + external deps before cross"
-                { { { @struct trait_struct } { { impls+ }* } }* }
+                { { { @match $crate::__is_trait_struct } { { impls+ }* } }* }
                 { { extern_deps* } }
             }
             => ::demuncher::cross{}
             => ::demuncher::assert_flow{
                 !"multi stmts + external deps after cross"
-                { { { @struct trait_struct } { { impls+ }* } } { extern_deps* } }*
+                { { { @match $crate::__is_trait_struct } { { impls+ }* } } { extern_deps* } }*
             }
             => [
                 ::demuncher::debrace{}
@@ -1292,7 +1556,7 @@ macro_rules! __emit_multiple_impls_for_traits {
                 }
                 => ::demuncher::assert_flow{
                     !"multi impl stmt + external deps"
-                    { @struct trait_struct } { { impls+ }* } { extern_deps* }
+                    { @match $crate::__is_trait_struct } { { impls+ }* } { extern_deps* }
                 }
                 => __emit_multiple_impls_for_trait{ ctx: $ctx } // emitting
             ]
@@ -1459,6 +1723,11 @@ macro_rules! __get_trait_stmts {
                         => ::demuncher::debrace{}
                         => ::demuncher::strip_brackets{perhaps}
                         => ::demuncher::split_by{,}
+                        => [
+                            ::demuncher::debrace{}
+                            => $crate::__get_impl_struct{}
+                            => ::demuncher::embrace{}
+                        ]
                         => ::demuncher::embrace{}
                     }
                 }
@@ -1479,7 +1748,11 @@ macro_rules! __get_impl_stmts {
             { $($input)* }
             => $crate::__for_each_impl_statement{
                 ::demuncher::fork{
-                    { ::demuncher::pass{} }
+                    {
+                        ::demuncher::debrace{}
+                        => $crate::__get_impl_struct{}
+                        => ::demuncher::embrace{}
+                    }
                     {
                         ::demuncher::debrace{perhaps}
                         => ::demuncher::split_by{,}
@@ -1496,6 +1769,325 @@ macro_rules! __get_impl_stmts {
             }
             => $($cont_args)*
         }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_impl_struct {
+    (
+        { sub $($rest:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($rest)* } { impl_ty: {}, kind: {sub}, label: {}, default: {true} } }
+            => $crate::__move_ty_with_suffixes_to_impl_struct{}
+            => $($cont_args)*
+        }
+    };
+    (
+        { extern } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { impl_ty: {}, kind: {extern}, label: {}, default: {false} }
+            => $($cont_args)*
+        }
+    };
+    (
+        { $($input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { { $($input)* } { impl_ty: {}, kind: {}, label: {}, default: {true} } }
+            => $crate::__move_ty_with_suffixes_to_impl_struct{}
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_impl_struct {
+    (
+        {
+            impl_ty: { $($impl_ty:tt)* },
+            kind: { $($kind:tt)* },
+            label: { $($label:tt)* },
+            default: { $($default:tt)* }
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { $($other_input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __move_ty_with_suffixes_to_impl_struct {
+    (
+        {
+            { $impl_ty:ty as $label:ident }
+            { impl_ty: $impl_ty_ignored:tt, kind: $kind:tt, label: $label_ignored:tt, default: $default_ignored:tt }
+        }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { impl_ty: { $impl_ty }, kind: $kind, label: {$label}, default: {false} }
+            => $($cont_args)*
+        }
+    };
+    (
+        {
+            { $impl_ty:ty as $label:ident with default }
+            { impl_ty: $impl_ty_ignored:tt, kind: $kind:tt, label: $label_ignored:tt, default: $default_ignored:tt }
+        }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { impl_ty: { $impl_ty }, kind: $kind, label: {$label}, default: {true} }
+            => $($cont_args)*
+        }
+    };
+    (
+        {
+            { $impl_ty:ty }
+            { impl_ty: $impl_ty_ignored:tt, kind: $kind:tt, label: $label_ignored:tt, default: $default:tt }
+        }
+        => {}
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { impl_ty: { $impl_ty }, kind: $kind, label: {}, default: $default }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_impl_ty_for_impl_struct {
+    (
+        { impl_ty: { $($impl_ty:tt)* } $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $($impl_ty)* } => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_label_for_impl_struct {
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: $kind_ignored:tt, label: { $($label:tt)* } $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $($label)* } => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_field_for_impl_struct {
+    (
+        {
+            impl_ty: { $($impl_ty:tt)* },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)* },
+            default: {false}
+            $($fields_tail:tt)*
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $($label)*: $($impl_ty)* } => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: { $($impl_ty:tt)* },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)* },
+            default: {true}
+            $($fields_tail:tt)*
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $($label)*: ::std::option::Option< $($impl_ty)* > } => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_init_for_impl_struct {
+    (
+        {
+            impl_ty: $impl_ty_ignored:tt,
+            kind: $kind_ignored:tt,
+            label: {},
+            default: $default_ignored:tt
+            $($fields_tail:tt)*
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {} => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {false}
+            $($fields_tail:tt)*
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { { $($label)+ } } => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {true}
+            $($fields_tail:tt)*
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { { $($label)+: ::std::option::Option::None } } => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __get_build_for_impl_struct {
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $kind_ignored:tt,
+            label: {},
+            default: {true}
+            $($fields_tail:tt)*
+        } => {
+            self: { $self:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $($impl_ty)+ ::default() } => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {false}
+            $($fields_tail:tt)*
+        } => {
+            self: { $self:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $self. $($label)+ } => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: { $($impl_ty:tt)+ },
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {true}
+            $($fields_tail:tt)*
+        } => {
+            self: { $self:ident }
+        } => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { $self. $($label)+ .unwrap_or_default() } => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_simple_impl_struct {
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: {} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: { $($any_kind:tt)+ } $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_sub_impl_struct {
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: {sub} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: { $($any_kind:tt)* } $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_extern_impl_struct {
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: {extern} $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { impl_ty: $impl_ty_ignored:tt, kind: { $($any_kind:tt)* } $($fields_tail:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_mandatory_impl_struct {
+    (
+        {
+            impl_ty: $impl_ty_ignored:tt,
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {false}
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: $impl_ty_ignored:tt,
+            kind: $kind_ignored:tt,
+            label: $any_label:tt,
+            default: $any_default:tt
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_optional_impl_struct {
+    (
+        {
+            impl_ty: $impl_ty_ignored:tt,
+            kind: $kind_ignored:tt,
+            label: { $($label:tt)+ },
+            default: {true}
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        {
+            impl_ty: $impl_ty_ignored:tt,
+            kind: $kind_ignored:tt,
+            label: $any_label:tt,
+            default: $any_default:tt
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
     };
 }
 
@@ -1548,6 +2140,27 @@ macro_rules! __get_trait_struct_for_dep {
             => $crate::__set_decorators_for_trait_struct{}
             => $($cont_args)*
         }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_trait_struct {
+    (
+        {
+            multi: { $($multi:tt)* },
+            mut: { $($mut:tt)* },
+            trait: { $($trait:tt)* },
+            trait_provider: { $($trait_provider:tt)* },
+            into_trait: { $($into_trait:tt)* }
+        } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {true} => $($cont_args)* }
+    };
+    (
+        { $($other_input:tt)* } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {false} => $($cont_args)* }
     };
 }
 
@@ -1747,7 +2360,7 @@ macro_rules! __get_extern_provided_trait_structs {
                     => [
                         ::demuncher::debrace{}
                         => ::demuncher::when{
-                            { ::demuncher::head{} => ::demuncher::debrace{} => $crate::__is_extern{} } => {
+                            { ::demuncher::head{} => ::demuncher::debrace{} => $crate::__is_extern_impl_struct{} } => {
                                 ::demuncher::tail{}
                                 => ::demuncher::debrace{}
                             }
@@ -1762,7 +2375,7 @@ macro_rules! __get_extern_provided_trait_structs {
                             {
                                 ::demuncher::tail{}
                                 => ::demuncher::debrace{}
-                                => ::demuncher::any{ ::demuncher::debrace{} => $crate::__is_extern{} }
+                                => ::demuncher::any{ ::demuncher::debrace{} => $crate::__is_extern_impl_struct{} }
                             } => {
                                 ::demuncher::head{}
                             }
@@ -1806,7 +2419,7 @@ macro_rules! __get_all_provided_trait_structs {
 }
 
 /// ## Output:
-/// `{ { { impl } { trait_struct } }* }`
+/// `{ { { impl_struct } { trait_struct } }* }`
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __get_single_impl_trait_structs {
@@ -1894,8 +2507,8 @@ macro_rules! __get_sub_ctxs {
                 => ::demuncher::head{}
                 => ::demuncher::debrace{}
                 => ::demuncher::when{
-                    { $crate::__is_sub{} } => {
-                        ::demuncher::tail{}
+                    { $crate::__is_sub_impl_struct{} } => {
+                        $crate::__get_impl_ty_for_impl_struct{}
                         => ::demuncher::embrace{}
                     }
                 }
@@ -2715,7 +3328,11 @@ macro_rules! __emit_trait_from_extern_context {
 #[doc(hidden)]
 macro_rules! __emit_item_impl {
     (
-        { $impl_ty:ty } => {
+        {
+            impl_ty: { $impl_ty:ty },
+            kind: {}
+            $($impl_tail:tt)*
+        } => {
             ctx: $ctx:ident,
             ctx_provided: $ctx_provided:ident,
             local_impls: $local_impls:ident,
@@ -2748,7 +3365,11 @@ macro_rules! __emit_item_impl {
         }
     };
     (
-        { $impl_ty:ty } => {
+        {
+            impl_ty: { $impl_ty:ty },
+            kind: {}
+            $($impl_tail:tt)*
+        } => {
             ctx: $ctx:ident,
             ctx_provided: $ctx_provided:ident,
             local_impls: $local_impls:ident,
@@ -2779,7 +3400,11 @@ macro_rules! __emit_item_impl {
         }
     };
     (
-        { sub $sub_ctx_ty:ty } => {
+        {
+            impl_ty: { $sub_ctx_ty:ty },
+            kind: {sub}
+            $($impl_tail:tt)*
+        } => {
             ctx: $ctx:ident,
             ctx_provided: $ctx_provided:ident,
             local_impls: $local_impls:ident,
@@ -3878,6 +4503,284 @@ mod tests {
             CalledMultiServiceImpl3: mut CalledIdSetterService;
             extern: LoggingService;
             AdditionalServiceImpl1: AdditionalService, mut AdditionalSetterService;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl3];
+        }
+    }
+
+    #[test]
+    fn service_calls_another_service_with_additional_service_initialized() {
+        let context =
+            ServiceCallsAnotherServiceWithAdditionalServiceInitializedContext::init(AdditionalServiceImpl1 { value: 33 })
+            .build();
+        {
+            let ctx_provided = context.provide();
+            ctx_provided.get_calling_service().call_service(2);
+        }
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_service(2)",
+            "+additional_service(2, 33)",
+            "-additional_service(2, 33)",
+            "-called_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide().get_logged_service().get_calls(), expected_calls);
+    }
+    
+    //trace_macros!(true);
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsAnotherServiceWithAdditionalServiceInitializedContext {
+            CalledServiceImpl1: CalledService;
+            CallingServiceImpl1: CallingService;
+            LoggingServiceImpl1: LoggingService, LoggedService;
+            AdditionalServiceImpl1 as additional: AdditionalService;
+        }
+    }
+    //trace_macros!(false);
+
+    #[test]
+    fn service_calls_implementations_between_3_levels_of_contexts_initialized() {
+        let mut context =
+            ServiceCallsImplementationsBetween3LevelsOfContextsInitializedTop::init(
+                ServiceCallsImplementationsBetween3LevelsOfContextsInitializedMiddle::init(
+                    CalledMultiServiceImpl2 { value: 44 },
+                    ServiceCallsImplementationsBetween3LevelsOfContextsInitializedBottom::init(
+                        CalledMultiServiceImpl3 { id: 5 },
+                        AdditionalServiceImpl1 { value: 3 }
+                    )
+                    .build()
+                )
+                .build()
+            )
+            .build();
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_multi_service3(0, 5)",
+            "+additional_service(5, 3)",
+            "-additional_service(5, 3)",
+            "-called_multi_service3(0, 5)",
+            "+called_multi_service(1, 44)",
+            "-called_multi_service(1, 44)",
+            "+called_multi_service(2)",
+            "-called_multi_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide_mut().get_logged_service().get_calls(), expected_calls);
+    }
+
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedTop {
+            CallingMultipleServiceImpl1: CallingService;
+            CalledMultiServiceImpl1;
+            LoggingServiceImpl1: LoggingService, LoggedService;
+            sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedMiddle as middle;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl1, sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedMiddle]
+        }
+    }
+
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedMiddle as called_middle  {
+            CalledMultiServiceImpl2 as called;
+            extern: LoggingService;
+            sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedBottom as bottom;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl2, sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedBottom];
+        }
+    }
+
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedBottom as called_bottom  {
+            CalledMultiServiceImpl3 as called;
+            extern: LoggingService;
+            AdditionalServiceImpl1 as additional: AdditionalService;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl3];
+        }
+    }
+
+    #[test]
+    fn service_calls_another_service_with_additional_service_initialized_optionally() {
+        let context =
+            ServiceCallsAnotherServiceWithAdditionalServiceInitializedOptionallyContext::init()
+            .set_additional(AdditionalServiceImpl1 { value: 22 })
+            .build();
+        {
+            let ctx_provided = context.provide();
+            ctx_provided.get_calling_service().call_service(2);
+        }
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_service(2)",
+            "+additional_service(2, 22)",
+            "-additional_service(2, 22)",
+            "-called_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide().get_logged_service().get_calls(), expected_calls);
+    }
+
+    #[test]
+    fn service_calls_another_service_with_additional_service_not_initialized_optionally() {
+        let context =
+            ServiceCallsAnotherServiceWithAdditionalServiceInitializedOptionallyContext::init()
+            .build();
+        {
+            let ctx_provided = context.provide();
+            ctx_provided.get_calling_service().call_service(2);
+        }
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_service(2)",
+            "+additional_service(2, 0)",
+            "-additional_service(2, 0)",
+            "-called_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide().get_logged_service().get_calls(), expected_calls);
+    }
+    
+    //trace_macros!(true);
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsAnotherServiceWithAdditionalServiceInitializedOptionallyContext {
+            CalledServiceImpl1: CalledService;
+            CallingServiceImpl1: CallingService;
+            LoggingServiceImpl1: LoggingService, LoggedService;
+            AdditionalServiceImpl1 as additional with default: AdditionalService;
+        }
+    }
+    //trace_macros!(false);
+
+    #[test]
+    fn service_calls_implementations_between_3_levels_of_contexts_initialized_some_optionally() {
+        let mut context =
+            ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyTop::init(
+                ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle::init(
+                    CalledMultiServiceImpl2 { value: 44 }
+                )
+                .set_bottom(
+                    ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyBottom::init()
+                    .set_additional(AdditionalServiceImpl1 { value: 3 })
+                    .set_called(CalledMultiServiceImpl3 { id: 5 })
+                    .build()
+                )
+                .build()
+            )
+            .build();
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_multi_service3(0, 5)",
+            "+additional_service(5, 3)",
+            "-additional_service(5, 3)",
+            "-called_multi_service3(0, 5)",
+            "+called_multi_service(1, 44)",
+            "-called_multi_service(1, 44)",
+            "+called_multi_service(2)",
+            "-called_multi_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide_mut().get_logged_service().get_calls(), expected_calls);
+    }
+
+    #[test]
+    fn service_calls_implementations_between_3_levels_of_contexts_initialized_some_optionally_some_default() {
+        let mut context =
+            ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyTop::init(
+                ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle::init(
+                    CalledMultiServiceImpl2 { value: 44 }
+                )
+                .set_bottom(
+                    ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyBottom::init()
+                    .build()
+                )
+                .build()
+            )
+            .build();
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_multi_service3(0, 0)",
+            "+additional_service(0, 0)",
+            "-additional_service(0, 0)",
+            "-called_multi_service3(0, 0)",
+            "+called_multi_service(1, 44)",
+            "-called_multi_service(1, 44)",
+            "+called_multi_service(2)",
+            "-called_multi_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide_mut().get_logged_service().get_calls(), expected_calls);
+    }
+
+    #[test]
+    fn service_calls_implementations_between_3_levels_of_contexts_initialized_some_optionally_sub_context_default() {
+        let mut context =
+            ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyTop::init(
+                ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle::init(
+                    CalledMultiServiceImpl2 { value: 44 }
+                )
+                .build()
+            )
+            .build();
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_multi_service3(0, 0)",
+            "+additional_service(0, 0)",
+            "-additional_service(0, 0)",
+            "-called_multi_service3(0, 0)",
+            "+called_multi_service(1, 44)",
+            "-called_multi_service(1, 44)",
+            "+called_multi_service(2)",
+            "-called_multi_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*context.provide_mut().get_logged_service().get_calls(), expected_calls);
+    }
+
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyTop {
+            CallingMultipleServiceImpl1: CallingService;
+            CalledMultiServiceImpl1;
+            LoggingServiceImpl1: LoggingService, LoggedService;
+            sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle as middle;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl1, sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle]
+        }
+    }
+
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyMiddle as called_middle  {
+            CalledMultiServiceImpl2 as called;
+            extern: LoggingService;
+            sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyBottom as bottom with default;
+        }
+        traits {
+            CalledMultiService => [CalledMultiServiceImpl2, sub ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyBottom];
+        }
+    }
+
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCallsImplementationsBetween3LevelsOfContextsInitializedSomeOptionallyBottom as called_bottom  {
+            CalledMultiServiceImpl3 as called with default;
+            extern: LoggingService;
+            AdditionalServiceImpl1 as additional with default: AdditionalService;
         }
         traits {
             CalledMultiService => [CalledMultiServiceImpl3];
