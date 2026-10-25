@@ -386,7 +386,7 @@ macro_rules! service_context {
 }
 
 #[macro_export]
-macro_rules! impl_service {
+macro_rules! service {
     // Entry point with dependency list.
     ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
         ::demuncher::apply_pipe!{
@@ -405,12 +405,8 @@ macro_rules! impl_service {
             DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
         { $($def)* }
     };
-}
-
-#[macro_export]
-macro_rules! impl_mut_service {
     // Entry point with dependency list.
-    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
+    ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
         ::demuncher::apply_pipe!{
             { $($rest)+ }
             => $crate::__split_deps_usings_and_def{}
@@ -419,7 +415,7 @@ macro_rules! impl_mut_service {
         }
     };
     // Entry point with no dependencies.
-    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => { // $( where deps: $($deps:ident),+ )? { $($def:tt)* }
+    ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => { // $( where deps: $($deps:ident),+ )? { $($def:tt)* }
         impl<TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
             for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
         where
@@ -428,10 +424,6 @@ macro_rules! impl_mut_service {
             DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
         { $($def)* }
     };
-}
-
-#[macro_export]
-macro_rules! def_service {
     (
         $(#[$ctx_meta:meta])*
         $vis:vis trait $trait_ty:ident as $name:ident {
@@ -4795,7 +4787,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct CallingMultipleServiceImpl1;
 
-    impl_service! {
+    service! {
         impl CallingService for CallingMultipleServiceImpl1 where deps: LoggingService + [CalledMultiService]
         {
             fn call_service(&self, id: i32) {
@@ -4812,7 +4804,7 @@ mod tests {
         }
     }
 
-    def_service!{
+    service!{
         trait CalledMultiService as called_multi_service {
             fn call_service(&self, idx: usize);
         }
@@ -4821,7 +4813,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct CalledMultiServiceImpl1;
 
-    impl_service! {
+    service! {
         impl CalledMultiService for CalledMultiServiceImpl1 where deps: LoggingService
         {
             fn call_service(&self, idx: usize) {
@@ -4832,7 +4824,7 @@ mod tests {
         }
     }
 
-    def_service!{
+    service!{
         trait SetterMultiService as setter_multi_service {
             fn set_value(&mut self, value: i32);
         }
@@ -4843,7 +4835,7 @@ mod tests {
         pub value: i32
     }
 
-    impl_service! {
+    service! {
         impl CalledMultiService for CalledMultiServiceImpl2 where deps: LoggingService
         {
             fn call_service(&self, idx: usize) {
@@ -4855,8 +4847,8 @@ mod tests {
         }
     }
 
-    impl_mut_service! {
-        impl SetterMultiService for CalledMultiServiceImpl2 where deps: LoggingService
+    service! {
+        impl mut SetterMultiService for CalledMultiServiceImpl2 where deps: LoggingService
         {
             fn set_value(&mut self, value: i32) {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+setter_multi_service({value})"));
@@ -4871,13 +4863,13 @@ mod tests {
         id: i32
     }
 
-    def_service!{
+    service!{
         trait CalledIdSetterService as called_id_setter_service {
             fn set_id(&mut self, id: i32);
         }
     }
 
-    impl_service! {
+    service! {
         impl CalledMultiService for CalledMultiServiceImpl3 where deps: LoggingService + AdditionalService
         {
             fn call_service(&self, idx: usize) {
@@ -4890,8 +4882,8 @@ mod tests {
         }
     }
 
-    impl_mut_service!{
-        impl CalledIdSetterService for CalledMultiServiceImpl3 where deps: LoggingService {
+    service!{
+        impl mut CalledIdSetterService for CalledMultiServiceImpl3 where deps: LoggingService {
             fn set_id(&mut self, id: i32) {
                 self.get_logging_service().log(&format!("+called_id_setter_service({id})"));
                 self.mut_data().id = id;
@@ -4903,13 +4895,13 @@ mod tests {
     #[derive(Debug, Default)]
     struct CallingServiceImpl1;
 
-    def_service!{
+    service!{
         trait CallingService as calling_service {
             fn call_service(&self, id: i32);
         }
     }
 
-    impl_service! {
+    service! {
         impl CallingService for CallingServiceImpl1 where deps: LoggingService + called_service_def::CalledService
         {
             fn call_service(&self, id: i32) {
@@ -4922,7 +4914,7 @@ mod tests {
     }
 
     mod called_service_def {
-        def_service!{
+        service!{
             pub trait CalledService as called_service {
                 fn call_service(&self, id: i32);
             }
@@ -4932,7 +4924,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct CalledServiceImpl1;
 
-    impl_service! {
+    service! {
         impl called_service_def::CalledService for CalledServiceImpl1 where deps: LoggingService + AdditionalService
         {
             fn call_service(&self, id: i32) {
@@ -4949,19 +4941,19 @@ mod tests {
         value: i32
     }
 
-    def_service!{
+    service!{
         trait AdditionalService as additional_service {
             fn call_service(&self, id: i32);
         }
     }
 
-    def_service!{
+    service!{
         trait AdditionalSetterService as additional_setter_service {
             fn set_value(&mut self, value: i32);
         }
     }
 
-    impl_service! {
+    service! {
         impl AdditionalService for AdditionalServiceImpl1 where deps: LoggingService
         {
             fn call_service(&self, id: i32) {
@@ -4973,8 +4965,8 @@ mod tests {
         }
     }
 
-    impl_mut_service! {
-        impl AdditionalSetterService for AdditionalServiceImpl1 where deps: LoggingService
+    service! {
+        impl mut AdditionalSetterService for AdditionalServiceImpl1 where deps: LoggingService
         {
             fn set_value(&mut self, value: i32) {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+additional_setter_service({value})"));
@@ -4989,13 +4981,13 @@ mod tests {
         pub calls: RefCell<Vec<String>>
     }
 
-    def_service!{
+    service!{
         trait LoggingService as logging_service {
             fn log(&self, message: &str);
         }
     }
 
-    impl_service! {
+    service! {
         impl LoggingService for LoggingServiceImpl1
         {
             fn log(&self, message: &str) {
@@ -5004,13 +4996,13 @@ mod tests {
         }
     }
 
-    def_service!{
+    service!{
         trait LoggedService as logged_service {
             fn get_calls(&'_ self) -> Ref<'_, Vec<String>>;
         }
     }
 
-    impl_service! {
+    service! {
         impl LoggedService for LoggingServiceImpl1
         {
             fn get_calls(&'_ self) -> Ref<'_, Vec<String>> {
