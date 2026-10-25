@@ -556,6 +556,54 @@ macro_rules! service {
 }
 
 #[macro_export]
+macro_rules! use_service {
+    ($path_head:ident $(:: $path_tail:ident)*) => {
+        ::demuncher::apply_pipe!{
+            { $path_head $(:: $path_tail)* }
+            => ::demuncher::fork_repeated{
+                { $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMultipleServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMultipleMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMultipleServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMultipleMutServiceProvider } => $crate::__emit_use_service{} }
+            }
+            => $crate::__apply_paste{}
+        }
+    };
+    (:: $path_head:ident $(:: $path_tail:ident)*) => {
+        ::demuncher::apply_pipe!{
+            { :: $path_head $(:: $path_tail)* }
+            => ::demuncher::fork_repeated{
+                { $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMultipleServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞMultipleMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMutServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMultipleServiceProvider } => $crate::__emit_use_service{} }
+                { $crate::__path_with_suffix{ ඞIntoMultipleMutServiceProvider } => $crate::__emit_use_service{} }
+            }
+            => $crate::__apply_paste{}
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_use_service {
+    (
+        { $($path:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ { use $($path)+ ; } => $($cont_args)* }
+    }
+}
+
+#[macro_export]
 #[doc(hidden)]
 macro_rules! __get_service_ctx_hlists {
     (
@@ -4286,6 +4334,9 @@ mod tests {
 
     use super::*;
 
+    use_service!(additional_service_def::AdditionalService);
+    use_service!(additional_service_def::AdditionalSetterService);
+
     #[test]
     fn service_calls_another_service_with_additional_service() {
         let mut context = ServiceCallsAnotherServiceWithAdditionalServiceContext::default();
@@ -4941,15 +4992,17 @@ mod tests {
         value: i32
     }
 
-    service!{
-        trait AdditionalService as additional_service {
-            fn call_service(&self, id: i32);
+    mod additional_service_def {
+        service!{
+            pub trait AdditionalService as additional_service {
+                fn call_service(&self, id: i32);
+            }
         }
-    }
 
-    service!{
-        trait AdditionalSetterService as additional_setter_service {
-            fn set_value(&mut self, value: i32);
+        service!{
+            pub trait AdditionalSetterService as additional_setter_service {
+                fn set_value(&mut self, value: i32);
+            }
         }
     }
 
