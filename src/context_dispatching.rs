@@ -391,7 +391,7 @@ macro_rules! impl_service {
     ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
         ::demuncher::apply_pipe!{
             { $($rest)+ }
-            => $crate::__split_deps_and_def{}
+            => $crate::__split_deps_usings_and_def{}
             => $crate::__emit_impl_service{ impl: $impl_ty, trait: $($trait_head)?$(::$trait_tail)* }
             => $crate::__apply_paste{}
         }
@@ -413,7 +413,7 @@ macro_rules! impl_mut_service {
     ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
         ::demuncher::apply_pipe!{
             { $($rest)+ }
-            => $crate::__split_deps_and_def{}
+            => $crate::__split_deps_usings_and_def{}
             => $crate::__emit_impl_mut_service{ impl: $impl_ty, trait: $($trait_head)?$(::$trait_tail)* }
             => $crate::__apply_paste{}
         }
@@ -500,7 +500,7 @@ macro_rules! def_service {
                 fn into_mut_services<'s>(self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
             }
 
-            $crate::def_seq_gat_for_multi_trait!($trait_ty);
+            $crate::def_seq_gat_for_multi_trait!($vis $trait_ty);
         }
     };
 }
@@ -2667,24 +2667,34 @@ macro_rules! __emit_trait_with_multiple_impls {
 #[doc(hidden)]
 macro_rules! __path_with_prefix_and_suffix {
     (
-        { {$($prefix:ident)*} {$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+        { {$($prefix:ident)*} {$($path:tt)+} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
     ) => {
-        $cont!{ {[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+        $cont!{
+            { $($path)+ }
+            => ::demuncher::split_by{::}
+            => ::demuncher::split_last{}
+            => ::demuncher::fork{
+                { ::demuncher::debrace{} }
+                {
+                    ::demuncher::debrace{}
+                    => ::demuncher::debrace{}
+                    => $crate::__path_with_prefix_and_suffix_pasted{ {$($prefix)*} {$($suffix)*} }
+                    => ::demuncher::embrace{}
+                }
+            }
+            => ::demuncher::join_with{::}
+            => $($cont_args)*
+        }
     };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __path_with_prefix_and_suffix_pasted {
     (
-        { {$($prefix:ident)*} {::$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
+        {$last:ident} => { {$($prefix:ident)*} {$($suffix:ident)*} } => $cont:path { $($cont_args:tt)* }
     ) => {
-        $cont!{ {::[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
-    };
-    (
-        { {$($prefix:ident)*} {$($path:ident::)+$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ {$($path::)+[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
-    };
-    (
-        { {$($prefix:ident)*} {::$($path:ident::)+$last:ident} {$($suffix:ident)*} } => {} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ {::$($path::)+[< $($prefix)* $last $($suffix)* >]} => $($cont_args)* }
+        $cont!{ { [< $($prefix)* $last $($suffix)* >] } => $($cont_args)* }
     };
 }
 
@@ -2692,26 +2702,78 @@ macro_rules! __path_with_prefix_and_suffix {
 #[doc(hidden)]
 macro_rules! __path_with_suffix {
     (
-        {$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
+        { $($path:tt)+ } => { $($suffix:ident)* } => $cont:path { $($cont_args:tt)* }
     ) => {
-        $cont!{ {[<$last $suffix>]} => $($cont_args)* }
-    };
-    (
-        {::$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ {::[<$last $suffix>]} => $($cont_args)* }
-    };
-    (
-        {$($prefix:ident::)+$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ {$($prefix::)+[<$last $suffix>]} => $($cont_args)* }
-    };
-    (
-        {::$($prefix:ident::)+$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{ {::$($prefix::)+[<$last $suffix>]} => $($cont_args)* }
+        $cont!{
+            { $($path)+ }
+            => ::demuncher::split_by{::}
+            => ::demuncher::split_last{}
+            => ::demuncher::fork{
+                { ::demuncher::debrace{} }
+                {
+                    ::demuncher::debrace{}
+                    => ::demuncher::debrace{}
+                    => $crate::__path_with_suffix_pasted{$($suffix)*}
+                    => ::demuncher::embrace{}
+                }
+            }
+            => ::demuncher::join_with{::}
+            => $($cont_args)*
+        }
     };
 }
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __path_with_suffix_pasted {
+    (
+        {$last:ident} => {$($suffix:ident)*} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {[< $last $($suffix)* >]} => $($cont_args)* }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __is_non_trivial_path {
+    (
+        { $($path:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { $($path)+ }
+            => ::demuncher::split_by{::}
+            => ::demuncher::tail{}
+            => ::demuncher::is_empty{}
+            => ::demuncher::not{}
+            => $($cont_args)*
+        }
+    };
+}
+
+// #[macro_export]
+// #[doc(hidden)]
+// macro_rules! __path_with_suffix {
+//     (
+//         {$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
+//     ) => {
+//         $cont!{ {[<$last $suffix>]} => $($cont_args)* }
+//     };
+//     (
+//         {::$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
+//     ) => {
+//         $cont!{ {::[<$last $suffix>]} => $($cont_args)* }
+//     };
+//     (
+//         {$($prefix:ident::)+$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
+//     ) => {
+//         $cont!{ {$($prefix::)+[<$last $suffix>]} => $($cont_args)* }
+//     };
+//     (
+//         {::$($prefix:ident::)+$last:ident} => {$suffix:ident} => $cont:path { $($cont_args:tt)* }
+//     ) => {
+//         $cont!{ {::$($prefix::)+[<$last $suffix>]} => $($cont_args)* }
+//     };
+// }
 
 #[macro_export]
 #[doc(hidden)]
@@ -3699,6 +3761,19 @@ macro_rules! __emit_dependant_trait_constraint {
 
 #[macro_export]
 #[doc(hidden)]
+macro_rules! __emit_dependant_trait_using {
+    (
+        { $($dep_trait_provider:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            { use $($dep_trait_provider)+ as _; }
+            => $($cont_args)*
+        }
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
 macro_rules! __emit_dependant_trait_impl {
     (
         { { [mut] } { $($dep_trait:tt)+ } } => { impl: $impl_ty:path } => $cont:path { $($cont_args:tt)* }
@@ -3838,7 +3913,7 @@ macro_rules! __emit_dependant_multiple_service_trait_impl {
 
 #[macro_export]
 #[doc(hidden)]
-macro_rules! __split_deps_and_def {
+macro_rules! __split_deps_usings_and_def {
     (
         { $($input:tt)+ } => {} => $cont:path { $($cont_args:tt)* }
     ) => {
@@ -3854,8 +3929,23 @@ macro_rules! __split_deps_and_def {
                         => $crate::__emit_dependant_trait_constraint{}
                         => ::demuncher::embrace{}
                     ]
-                    => ::demuncher::join_with{+}
-                    => ::demuncher::embrace{}
+                    => ::demuncher::fork_repeated{
+                        {
+                            ::demuncher::join_with{+}
+                            => ::demuncher::embrace{}
+                        }
+                        {
+                            [
+                                ::demuncher::debrace{}
+                                => ::demuncher::when{
+                                    { $crate::__is_non_trivial_path{} } => {
+                                        $crate::__emit_dependant_trait_using{}
+                                    }
+                                }
+                            ]
+                            => ::demuncher::embrace{}
+                        }
+                    }
                 }
                 { ::demuncher::debrace{} }
             }
@@ -3868,12 +3958,18 @@ macro_rules! __split_deps_and_def {
 #[doc(hidden)]
 macro_rules! __emit_impl_service {
     (
-        { {$($dependant_trait_constraints:tt)+} { $($def:tt)* } }
+        {
+            { $($dependant_trait_constraints:tt)+ }
+            { $($dependant_trait_usings:tt)* }
+            { $($def:tt)* }
+        }
         => { impl: $impl_ty:path, trait: $($trait_head:ident)?$(::$trait_tail:ident)* }
          => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
             {
+                $($dependant_trait_usings)*
+
                 impl<'c, TContextProvided, DataGetter> $($trait_head)?$(::$trait_tail)*
                     for ServiceProvidedWithContext<$impl_ty, TContextProvided, DataGetter>
                 where
@@ -3892,12 +3988,18 @@ macro_rules! __emit_impl_service {
 #[doc(hidden)]
 macro_rules! __emit_impl_mut_service {
     (
-        { {$($dependant_trait_constraints:tt)+} { $($def:tt)* } }
+        {
+            { $($dependant_trait_constraints:tt)+ }
+            { $($dependant_trait_usings:tt)* }
+            { $($def:tt)* }
+        }
         => { impl: $impl_ty:path, trait: $($trait_head:ident)?$(::$trait_tail:ident)* }
          => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
             {
+                $($dependant_trait_usings)*
+
                 impl<'c, TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
                     for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
                 where
@@ -4320,7 +4422,7 @@ mod tests {
     service_context! {
         #[derive(Debug, Default)]
         ServiceCallsAnotherServiceWithAdditionalServiceContext {
-            CalledServiceImpl1: CalledService;
+            CalledServiceImpl1: called_service_def::CalledService;
             CallingServiceImpl1: CallingService;
             LoggingServiceImpl1: LoggingService, LoggedService;
             AdditionalServiceImpl1: AdditionalService, mut AdditionalSetterService;
@@ -4533,7 +4635,7 @@ mod tests {
     service_context! {
         #[derive(Debug)]
         ServiceCallsAnotherServiceWithAdditionalServiceInitializedContext {
-            CalledServiceImpl1: CalledService;
+            CalledServiceImpl1: called_service_def::CalledService;
             CallingServiceImpl1: CallingService;
             LoggingServiceImpl1: LoggingService, LoggedService;
             AdditionalServiceImpl1 as additional: AdditionalService;
@@ -4654,7 +4756,7 @@ mod tests {
     service_context! {
         #[derive(Debug)]
         ServiceCallsAnotherServiceWithAdditionalServiceInitializedOptionallyContext {
-            CalledServiceImpl1: CalledService;
+            CalledServiceImpl1: called_service_def::CalledService;
             CallingServiceImpl1: CallingService;
             LoggingServiceImpl1: LoggingService, LoggedService;
             AdditionalServiceImpl1 as additional with default: AdditionalService;
@@ -4906,7 +5008,7 @@ mod tests {
     #[derive(Debug, Default)]
     struct CallingServiceImpl1;
 
-    service_deps!(CallingServiceImpl1: LoggingService, CalledService);
+    service_deps!(CallingServiceImpl1: LoggingService, called_service_def::CalledService);
 
     def_service!{
         trait CallingService as calling_service {
@@ -4915,7 +5017,7 @@ mod tests {
     }
 
     impl_service! {
-        impl CallingService for CallingServiceImpl1 where deps: LoggingService + CalledService
+        impl CallingService for CallingServiceImpl1 where deps: LoggingService + called_service_def::CalledService
         {
             fn call_service(&self, id: i32) {
                 let logging = self.get_logging_service();
@@ -4926,19 +5028,21 @@ mod tests {
         }
     }
 
+    mod called_service_def {
+        def_service!{
+            pub trait CalledService as called_service {
+                fn call_service(&self, id: i32);
+            }
+        }
+    }
+
     #[derive(Debug, Default)]
     struct CalledServiceImpl1;
 
     service_deps!(CalledServiceImpl1: LoggingService, AdditionalService);
 
-    def_service!{
-        trait CalledService as called_service {
-            fn call_service(&self, id: i32);
-        }
-    }
-
     impl_service! {
-        impl CalledService for CalledServiceImpl1 where deps: LoggingService + AdditionalService
+        impl called_service_def::CalledService for CalledServiceImpl1 where deps: LoggingService + AdditionalService
         {
             fn call_service(&self, id: i32) {
                 let logging = self.get_logging_service();

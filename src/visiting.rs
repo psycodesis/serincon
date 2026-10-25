@@ -270,9 +270,9 @@ impl<'i, TItem> Seq<'i> for VecSeq<TItem> {
 
 #[macro_export]
 macro_rules! def_seq_gat_for_multi_trait {
-    ($trait_ty:ident) => {
+    ($vis:vis $trait_ty:ident) => {
         ::paste::paste! {
-            struct [<$trait_ty ඞGat>];
+            $vis struct [<$trait_ty ඞGat>];
             impl $crate::visiting::SeqGat for [<$trait_ty ඞGat>] {
                 type Item<'j> = Box<dyn $trait_ty + 'j>;
             }
