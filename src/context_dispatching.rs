@@ -123,7 +123,7 @@ impl MutContextProvided for NoMutContextProvided
 
 
 pub struct StartContextProvided<'c, Context> {
-    start_ctx: &'c Context
+    pub start_ctx: &'c Context
 }
 
 impl<'c, TContext> ContextProvided for StartContextProvided<'c, TContext>
@@ -141,7 +141,7 @@ impl<'c, TContext> ContextProvided for StartContextProvided<'c, TContext>
 }
 
 pub struct StartMutContextProvided<'c, Context> {
-    start_ctx: &'c mut Context
+    pub start_ctx: &'c mut Context
 }
 
 impl<'c, TContext> ContextProvided for StartMutContextProvided<'c, TContext> {
@@ -173,7 +173,7 @@ pub struct ForwardingContextProvided<'c, ForwardedContextProvided>
 where
     ForwardedContextProvided: ContextProvided
 {
-    forwarded_ctx: &'c ForwardedContextProvided
+    pub forwarded_ctx: &'c ForwardedContextProvided
 }
 
 impl<'c, ForwardedContextProvided> ContextProvided for ForwardingContextProvided<'c, ForwardedContextProvided>
@@ -196,7 +196,7 @@ pub struct ForwardingMutContextProvided<'c, ForwardedContextProvided>
 where
     ForwardedContextProvided: MutContextProvided
 {
-    forwarded_ctx: &'c mut ForwardedContextProvided
+    pub forwarded_ctx: &'c mut ForwardedContextProvided
 }
 
 impl<'c, ForwardedContextProvided> ContextProvided for ForwardingMutContextProvided<'c, ForwardedContextProvided>
@@ -1705,14 +1705,14 @@ macro_rules! __emit_multiple_impls_for_trait {
                 trait_provider: {$($trait_provider_ty:tt)+},
                 into_trait: {$($into_trait_provider_ty:tt)+}
             }
-            { $($impls:tt)+ }
+            { $($impls:tt)* }
             {$($extern_deps:tt)*}
         } => {
             ctx: $ctx:ident
         } => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont! {
-            { $($impls)+ }
+            { $($impls)* }
             => [
                 ::demuncher::debrace{}
                 => $crate::__emit_item_impl{
@@ -1723,7 +1723,7 @@ macro_rules! __emit_multiple_impls_for_trait {
                     trait: { $($trait_ty)+ },
                     trait_provider: { $($trait_provider_ty)+ },
                     into_trait_provider: { $($into_trait_provider_ty)+ },
-                    service_kind: { $($mut:tt)* }
+                    service_kind: { $($mut)* }
                 }
             ]
             => $crate::__emit_trait_multiple_impls{
@@ -1853,8 +1853,12 @@ macro_rules! __get_trait_stmts {
                         => ::demuncher::split_by{,}
                         => [
                             ::demuncher::debrace{}
-                            => $crate::__get_impl_struct{}
-                            => ::demuncher::embrace{}
+                            => ::demuncher::when{
+                                { ::demuncher::is_empty{} => ::demuncher::not{} } => {
+                                    $crate::__get_impl_struct{}
+                                    => ::demuncher::embrace{}
+                                }
+                            }
                         ]
                         => ::demuncher::embrace{}
                     }
@@ -3573,17 +3577,20 @@ macro_rules! __emit_item_impl {
         $cont! {
             { 
                 $local_impls.push(
-                    Box::new(
-                        $crate::context_dispatching::MutServiceProvidedWithContext {
-                            ctx_provided: [<$ctx ඞProvided>](
-                                $crate::context_dispatching::MutForwardingContextProvided {
-                                    forwarded_ctx: $ctx_provided
-                                }
-                            ),
-                            data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
-                            _service_phantom: ::std::marker::PhantomData
-                        }
-                    )
+                    Box::new(|cp| {
+                        Box::new(
+                            $crate::context_dispatching::MutServiceProvidedWithContext {
+                                ctx_provided: [<$ctx ඞMutProvided>](
+                                    $crate::context_dispatching::ForwardingMutContextProvided {
+                                        forwarded_ctx: cp
+                                    }
+                                ),
+                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
+                                _service_phantom: ::std::marker::PhantomData
+                            }
+                        )
+                    })
                 );
             }
             => $($cont_args)*
@@ -3662,16 +3669,69 @@ macro_rules! __emit_trait_multiple_impls {
     ) => {
         $cont! {
             { 
-                impl<'c, TContextProvided> ContextMultipleMutServiceProvider<'c, [<$ctx ඞProvided>]<TContextProvided>, dyn $($trait_head)?$(::$trait_tail)* + 'c>
-                    for $ctx
+                impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
                     $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
                 {
-                    fn get_mut_services($ctx_provided: &'c mut [<$ctx ඞProvided>]<TContextProvided>) -> ::std::vec::Vec<::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>> {
-                        let mut $vec: ::std::vec::Vec<::std::boxed::Box<dyn $($trait_head)?$(::$trait_tail)* + 'c>> = vec![];
+                    fn get_mut_services<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
+                        let provided_ctx = [<$ctx ඞMutProvided>](
+                            $crate::context_dispatching::ForwardingMutContextProvided {
+                                forwarded_ctx: self
+                            }
+                        );
+                        $($into_trait_provider_ty)+::into_mut_services(provided_ctx)
+                    }
+                }
+                
+                impl<TContextProvided> $($into_trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
+                where
+                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentMutContextProvided: $($extern_deps)+)?
+                {
+                    fn into_mut_services<'s>(mut $ctx_provided) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)>
+                    where Self: 's
+                    {
+                        use ::std::{vec::Vec, vec, boxed::Box};
+                        use $crate::visiting::{Seq, DynSeq, Emit, Boxed, IntoSeq};
+
+                        let mut $local_impls:
+                            Vec<
+                                Box<
+                                    dyn for<'a> Fn(&'a mut Self) -> Box<dyn $($trait_ty)+ + 'a>
+                                >
+                            >
+                            = vec![];
+                        let mut $other_impls:
+                            Vec<
+                                Box<
+                                    dyn for<'a> FnOnce(&'a mut Self) -> Box<dyn DynSeq<Gat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> + 'a>
+                                >
+                            >
+                            = vec![];
                         $($impls)*
-                        $vec
+                        $other_impls.push(
+                            Box::new(
+                                move |ncp: &mut Self| {
+                                    $local_impls
+                                        .into_seq()
+                                        .wrap(|c, next: &mut dyn Emit<$crate::seq_gat_for_multi_trait!($($trait_ty)+)>| {
+                                            let service = (c)(ncp);
+                                            next.emit(service)
+                                        })
+                                        .as_dyn()
+                                }
+                            )
+                        );
+                        $other_impls
+                            .into_seq()
+                            .wrap(
+                                move |c, next: &mut dyn Emit<Boxed<$crate::seq_gat_for_multi_trait!($($trait_ty)+)>>| {
+                                    let sub_seq = (c)(&mut $ctx_provided);
+                                    next.emit(sub_seq)
+                                }
+                            )
+                            .flatten()
                     }
                 }
             }
@@ -3716,20 +3776,6 @@ macro_rules! __emit_trait_multiple_impls {
                     fn into_services<'s>(mut $ctx_provided) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)>
                     where Self: 's
                     {
-                        // let mut $local_impls: Vec<Box<dyn for<'a> FnOnce(&'a Self) -> ::std::boxed::Box<dyn $($trait_ty)+ + 'a>>> = vec![];
-                        // //let mut $local_impls: Vec<Box<dyn $($trait_ty)+ + 's>> = vec![];
-                        // let mut $other_impls: Vec<Box<dyn for<'a> FnOnce(&'a Self) -> ::std::boxed::Box<dyn ::std::iter::Iterator<Item = ::std::boxed::Box<dyn $($trait_ty)+ + 's>> + 's> + 's>> = vec![];
-                        // $($impls)*
-                        // $other_impls.push(::std::boxed::Box::new(move |cp| {
-                        //     ::std::boxed::Box::new(
-                        //         $local_impls.into_iter().map(move |f| {
-                        //             f(cp)
-                        //         })
-                        //     )
-                        // }));
-                        // $other_impls.into_iter().flat_map(move |f| {
-                        //     f(&$ctx_provided)
-                        // })
                         use ::std::{vec::Vec, vec, boxed::Box};
                         use $crate::visiting::{Seq, DynSeq, Emit, Boxed, IntoSeq};
 
@@ -4889,6 +4935,64 @@ mod tests {
         }
     }
 
+    #[test]
+    fn service_calls_0_multiple_implementations_of_service() {
+        let mut context = ServiceCalls0MultipleImplementationsOfOneServiceContext::default();
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*(context.provide().get_logged_service() as Box<dyn LoggedService>).get_calls(), expected_calls);
+    }
+
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCalls0MultipleImplementationsOfOneServiceContext {
+            CallingMultipleServiceImpl1 => CallingService;
+            LoggingServiceImpl1 => LoggingService, LoggedService
+        }
+        traits {
+            CalledMultiService <= []
+        }
+    }
+
+    #[test]
+    fn service_calls_multiple_implementations_of_mut_service() {
+        let mut context = ServiceCallsMultipleImplementationsOfMutServiceContext::default();
+        context.provide_mut().iter_mut_setter_multi_service().for_each(|mut service| {
+            service.set_value(3);
+        });
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+setter_multi_service(3)",
+            "-setter_multi_service(3)",
+            "+setter_multi_service(40 + 3)",
+            "-setter_multi_service(40 + 3)",
+            "+calling_service(2)",
+            "+called_multi_service(0, 3)",
+            "-called_multi_service(0, 3)",
+            "+called_multi_service(4 + 1, 43)",
+            "-called_multi_service(4 + 1, 43)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*(context.provide().get_logged_service() as Box<dyn LoggedService>).get_calls(), expected_calls);
+    }
+
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCallsMultipleImplementationsOfMutServiceContext {
+            CallingMultipleServiceImpl1 => CallingService;
+            CalledMultiServiceImpl2;
+            CalledMultiServiceImpl4;
+            LoggingServiceImpl1 => LoggingService, LoggedService
+        }
+        traits {
+            CalledMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4];
+            mut SetterMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4]
+        }
+    }
+
     #[derive(Debug, Default)]
     struct CallingMultipleServiceImpl1;
 
@@ -4993,6 +5097,34 @@ mod tests {
                 self.get_logging_service().log(&format!("+called_id_setter_service({id})"));
                 self.mut_data().id = id;
                 self.get_logging_service().log(&format!("-called_id_setter_service({id})"));
+            }
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CalledMultiServiceImpl4 {
+        pub value: i32
+    }
+
+    service! {
+        impl CalledMultiService for CalledMultiServiceImpl4 where deps: LoggingService
+        {
+            fn call_service(&self, idx: usize) {
+                let logging: Box<dyn LoggingService> = self.get_logging_service();
+                let value = self.data().value;
+                logging.log(&format!("+called_multi_service(4 + {idx}, {value})"));
+                logging.log(&format!("-called_multi_service(4 + {idx}, {value})"));
+            }
+        }
+    }
+
+    service! {
+        impl mut SetterMultiService for CalledMultiServiceImpl4 where deps: LoggingService
+        {
+            fn set_value(&mut self, value: i32) {
+                (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+setter_multi_service(40 + {value})"));
+                self.mut_data().value = 40 + value;
+                (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("-setter_multi_service(40 + {value})"));
             }
         }
     }
