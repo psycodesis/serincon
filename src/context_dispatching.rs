@@ -545,6 +545,18 @@ macro_rules! service {
                 }
             }
             
+            impl<TData, TContextProvided, MutDataGetter, DataGetter> [<$trait_ty ඞMultipleMutServiceProvider>]
+            for $crate::context_dispatching::MutServiceProvidedWithContext<TData, TContextProvided, MutDataGetter, DataGetter>
+            where
+                TContextProvided: $crate::context_dispatching::MutContextProvided + [<$trait_ty ඞMultipleMutServiceProvider>],
+                MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut TData,
+                DataGetter: Fn(&TContextProvided::Context) -> &TData
+            {
+                fn get_mut_services<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
+                    self.ctx_provided.get_mut_services()
+                }
+            }
+            
             #[allow(dead_code)]
             $vis trait [<$trait_ty ඞIntoMultipleMutServiceProvider>]: [<$trait_ty ඞMultipleMutServiceProvider>] {
                 fn into_mut_services<'s>(self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> where Self: 's;
@@ -3672,7 +3684,7 @@ macro_rules! __emit_trait_multiple_impls {
                 impl<TContextProvided> $($trait_provider_ty)+ for [<$ctx ඞMutProvided>]<TContextProvided>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    $(, TContextProvided::ParentContextProvided: $($extern_deps)+)?
+                    $(, TContextProvided::ParentMutContextProvided: $($extern_deps)+)?
                 {
                     fn get_mut_services<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($($trait_ty)+)> {
                         let provided_ctx = [<$ctx ඞMutProvided>](
@@ -4958,8 +4970,8 @@ mod tests {
     }
 
     #[test]
-    fn service_calls_multiple_implementations_of_mut_service() {
-        let mut context = ServiceCallsMultipleImplementationsOfMutServiceContext::default();
+    fn context_calls_multiple_implementations_of_mut_service() {
+        let mut context = ContextCallsMultipleImplementationsOfMutServiceContext::default();
         context.provide_mut().iter_mut_setter_multi_service().for_each(|mut service| {
             service.set_value(3);
         });
@@ -4981,7 +4993,44 @@ mod tests {
 
     service_context! {
         #[derive(Debug, Default)]
+        ContextCallsMultipleImplementationsOfMutServiceContext {
+            CallingMultipleServiceImpl1 => CallingService;
+            CalledMultiServiceImpl2;
+            CalledMultiServiceImpl4;
+            LoggingServiceImpl1 => LoggingService, LoggedService
+        }
+        traits {
+            CalledMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4];
+            mut SetterMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4]
+        }
+    }
+
+    #[test]
+    fn service_calls_multiple_implementations_of_mut_service() {
+        let mut context = ServiceCallsMultipleImplementationsOfMutServiceContext::default();
+        context.provide_mut().get_mut_calling_setter_multi_service().set_values(3);
+        context.provide().get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_setter_multi_service(3)",
+            "+setter_multi_service(3)",
+            "-setter_multi_service(3)",
+            "+setter_multi_service(40 + 3)",
+            "-setter_multi_service(40 + 3)",
+            "-calling_setter_multi_service(3)",
+            "+calling_service(2)",
+            "+called_multi_service(0, 3)",
+            "-called_multi_service(0, 3)",
+            "+called_multi_service(4 + 1, 43)",
+            "-called_multi_service(4 + 1, 43)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*(context.provide().get_logged_service() as Box<dyn LoggedService>).get_calls(), expected_calls);
+    }
+
+    service_context! {
+        #[derive(Debug, Default)]
         ServiceCallsMultipleImplementationsOfMutServiceContext {
+            CallingSetterMultiServiceImpl => mut CallingSetterMultiService;
             CallingMultipleServiceImpl1 => CallingService;
             CalledMultiServiceImpl2;
             CalledMultiServiceImpl4;
@@ -5125,6 +5174,29 @@ mod tests {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+setter_multi_service(40 + {value})"));
                 self.mut_data().value = 40 + value;
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("-setter_multi_service(40 + {value})"));
+            }
+        }
+    }
+
+    service! {
+        trait CallingSetterMultiService as calling_setter_multi_service {
+            fn set_values(&mut self, value: i32);
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct CallingSetterMultiServiceImpl;
+
+    service!{
+        impl mut CallingSetterMultiService for CallingSetterMultiServiceImpl
+        where deps: [mut SetterMultiService] + LoggingService
+        {
+            fn set_values(&mut self, value: i32) {
+                self.get_logging_service().log(&format!("+calling_setter_multi_service({value})"));
+                self.iter_mut_setter_multi_service().for_each(|mut service| {
+                    service.set_value(value);
+                });
+                self.get_logging_service().log(&format!("-calling_setter_multi_service({value})"));
             }
         }
     }
