@@ -372,7 +372,11 @@ macro_rules! service_context {
                         {
                             ::demuncher::take{ - - + }
                             => ::demuncher::debrace{}
-                            => $crate::__emit_ctx_provided{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? } // emitting
+                            => ::demuncher::fork_repeated{
+                                { $crate::__emit_ctx_provided{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? } }
+                                { $crate::__emit_ctx_provide{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? } }
+                                { $crate::__emit_sub_ctx_provider{ vis: $vis, ctx: $ctx $(, ctx_label: $ctx_label)? } }
+                            }
                         }
                         { $crate::__emit_single_trait_impls{ ctx: $ctx } }
                         { $crate::__emit_multiple_impls_for_traits{ ctx: $ctx } }
@@ -3407,21 +3411,21 @@ macro_rules! __trait_structs_as_deps {
 #[doc(hidden)]
 macro_rules! __emit_ctx_provided {
     (
-        { $($dependant_trait_constraints:tt)+ }
-        => { vis: $vis:vis, ctx: $ctx:ident }
+        { $($($dependant_trait_constraints:tt)+)? }
+        => { vis: $vis:vis, ctx: $ctx:ident $(, ctx_label: $ctx_label:ident)? }
         => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
             {
                 $vis struct [<$ctx ඞProvided>] <TContextProvided> (pub TContextProvided)
                 where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>,
-                    TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+;
+                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>
+                    $(, TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+)?;
 
                 impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞProvided>] <TContextProvided>
                 where
                     TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
+                    $(, TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+)?
                 {
                     type Context = $ctx;
                     type ParentContextProvided = TContextProvided::ParentContextProvided;
@@ -3438,12 +3442,12 @@ macro_rules! __emit_ctx_provided {
                 $vis struct [<$ctx ඞMutProvided>] <TContextProvided> (pub TContextProvided)
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+;
+                    $(, TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+)?;
 
                 impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
+                    $(, TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+)?
                 {
                     type Context = $ctx;
                     type ParentContextProvided = TContextProvided::ParentContextProvided;
@@ -3460,7 +3464,7 @@ macro_rules! __emit_ctx_provided {
                 impl<TContextProvided> $crate::context_dispatching::MutContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
+                    $(, TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+)?
                 {
                     type ParentMutContextProvided = TContextProvided::ParentMutContextProvided;
 
@@ -3476,240 +3480,18 @@ macro_rules! __emit_ctx_provided {
             => $($cont_args)*
         }
     };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_ctx_provide {
     (
         {}
-        => { vis: $vis:vis, ctx: $ctx:ident }
+        => { vis: $vis:vis, ctx: $ctx:ident $(, ctx_label: $ctx_label:ident)? }
         => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
             {
-                $vis struct [<$ctx ඞProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                $vis struct [<$ctx ඞMutProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                impl<TContextProvided> $crate::context_dispatching::MutContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                {
-                    type ParentMutContextProvided = TContextProvided::ParentMutContextProvided;
-
-                    fn mut_ctx(&mut self) -> &mut Self::Context {
-                        self.0.mut_ctx()
-                    }
-        
-                    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
-                        self.0.parent_mut_ctx_provided()
-                    }
-                }
-
-                impl $ctx {
-                    pub fn provide(&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx>> {
-                        [<$ctx ඞProvided>](
-                            $crate::context_dispatching::StartContextProvided {
-                                start_ctx: self
-                            }
-                        )
-                    }
-
-                    pub fn provide_mut(&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx>> {
-                        [<$ctx ඞMutProvided>](
-                            $crate::context_dispatching::StartMutContextProvided {
-                                start_ctx: self
-                            }
-                        )
-                    }
-
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-    (
-        { $($dependant_trait_constraints:tt)+ }
-        => { vis: $vis:vis, ctx: $ctx:ident, ctx_label: $ctx_label:ident }
-        => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            {
-                $vis struct [<$ctx ඞProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>,
-                    TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                $vis struct [<$ctx ඞMutProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                impl<TContextProvided> $crate::context_dispatching::MutContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                    , TContextProvided::ParentContextProvided: $($dependant_trait_constraints)+
-                {
-                    type ParentMutContextProvided = TContextProvided::ParentMutContextProvided;
-
-                    fn mut_ctx(&mut self) -> &mut Self::Context {
-                        self.0.mut_ctx()
-                    }
-        
-                    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
-                        self.0.parent_mut_ctx_provided()
-                    }
-                }
-
-                #[allow(dead_code)]
-                $vis trait [<$ctx ඞSubContextProvider>] {
-                    fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>>;
-
-                    fn [<get_ $ctx_label>](&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>> {
-                        self.get_sub_ctx()
-                    }
-                }
-
-                #[allow(dead_code)]
-                $vis trait [<$ctx ඞMutSubContextProvider>] {
-                    fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>>;
-
-                    fn [<get_mut_ $ctx_label>](&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx, ParentContextProvided: $($dependant_trait_constraints)+>> {
-                        self.get_mut_sub_ctx()
-                    }
-                }
-            }
-            => $($cont_args)*
-        }
-    };
-    (
-        {}
-        => { vis: $vis:vis, ctx: $ctx:ident, ctx_label: $ctx_label:ident }
-        => $cont:path { $($cont_args:tt)* }
-    ) => {
-        $cont!{
-            {
-                $vis struct [<$ctx ඞProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::ContextProvided<Context = $ctx>
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                $vis struct [<$ctx ඞMutProvided>] <TContextProvided> (pub TContextProvided)
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>;
-
-                impl<TContextProvided> $crate::context_dispatching::ContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                {
-                    type Context = $ctx;
-                    type ParentContextProvided = TContextProvided::ParentContextProvided;
-
-                    fn ctx(&self) -> &Self::Context {
-                        self.0.ctx()
-                    }
-                    
-                    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
-                        self.0.parent_ctx_provided()
-                    }
-                }
-
-                impl<TContextProvided> $crate::context_dispatching::MutContextProvided for [<$ctx ඞMutProvided>] <TContextProvided>
-                where
-                    TContextProvided: $crate::context_dispatching::MutContextProvided<Context = $ctx>
-                {
-                    type ParentMutContextProvided = TContextProvided::ParentMutContextProvided;
-
-                    fn mut_ctx(&mut self) -> &mut Self::Context {
-                        self.0.mut_ctx()
-                    }
-        
-                    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
-                        self.0.parent_mut_ctx_provided()
-                    }
-                }
-
                 impl $ctx {
                     #[allow(dead_code)]
                     pub fn provide(&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx>> {
@@ -3730,27 +3512,55 @@ macro_rules! __emit_ctx_provided {
                     }
 
                 }
-
+            }
+            => $($cont_args)*
+        }
+    };
+    (
+        { $($dependant_trait_constraints:tt)+ }
+        => { vis: $vis:vis, ctx: $ctx:ident$(, ctx_label: $ctx_label:ident)? }
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {} => $($cont_args)* }
+    };
+}
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __emit_sub_ctx_provider {
+    (
+        { $($($dependant_trait_constraints:tt)+)? }
+        => { vis: $vis:vis, ctx: $ctx:ident, ctx_label: $ctx_label:ident }
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{
+            {
+                #[allow(dead_code)]
                 $vis trait [<$ctx ඞSubContextProvider>] {
-                    #[allow(refining_impl_trait)]
-                    fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx>>;
+                    fn get_sub_ctx(&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx $(, ParentContextProvided: $($dependant_trait_constraints)+)? >>;
 
-                    fn [<get_ $ctx_label>](&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx>> {
+                    fn [<get_ $ctx_label>](&self) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx $(, ParentContextProvided: $($dependant_trait_constraints)+)? >> {
                         self.get_sub_ctx()
                     }
                 }
 
+                #[allow(dead_code)]
                 $vis trait [<$ctx ඞMutSubContextProvider>] {
-                    #[allow(refining_impl_trait)]
-                    fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx>>;
+                    fn get_mut_sub_ctx(&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx $(, ParentContextProvided: $($dependant_trait_constraints)+)? >>;
 
-                    fn [<get_mut_ $ctx_label>](&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx>> {
+                    fn [<get_mut_ $ctx_label>](&mut self) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx $(, ParentContextProvided: $($dependant_trait_constraints)+)? >> {
                         self.get_mut_sub_ctx()
                     }
                 }
             }
             => $($cont_args)*
         }
+    };
+    (
+        { $($dependant_trait_constraints:tt)* }
+        => { vis: $vis:vis, ctx: $ctx:ident }
+        => $cont:path { $($cont_args:tt)* }
+    ) => {
+        $cont!{ {} => $($cont_args)* }
     };
 }
 
