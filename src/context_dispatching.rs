@@ -121,7 +121,6 @@ impl MutContextProvided for NoMutContextProvided
     fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided { self }
 }
 
-
 pub struct StartContextProvided<'c, Context> {
     pub start_ctx: &'c Context
 }
@@ -300,6 +299,69 @@ where
     
     fn mut_ctx(&mut self) -> &mut SubContext {
         (self.mut_ctx_getter)(self.parent_ctx_provided.mut_ctx())
+    }
+    
+    fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
+        &mut self.parent_ctx_provided
+    }
+}
+
+pub struct StartContextProvidedWithParent<'c, Context, ParentContextProvided>
+where
+    ParentContextProvided: ContextProvided
+{
+    pub start_ctx: &'c Context,
+    pub parent_ctx_provided: ParentContextProvided
+}
+
+impl<'c, TContext, ParentContextProvided> ContextProvided for StartContextProvidedWithParent<'c, TContext, ParentContextProvided>
+where
+    ParentContextProvided: ContextProvided
+{
+    type Context = TContext;
+    type ParentContextProvided = ParentContextProvided;
+
+    fn ctx(&self) -> &TContext {
+        self.start_ctx
+    }
+    
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        &self.parent_ctx_provided
+    }
+}
+
+pub struct StartMutContextProvidedWithParent<'c, Context, ParentContextProvided>
+where
+    ParentContextProvided: MutContextProvided
+{
+    pub start_ctx: &'c mut Context,
+    pub parent_ctx_provided: ParentContextProvided
+}
+
+impl<'c, TContext, ParentContextProvided> ContextProvided for StartMutContextProvidedWithParent<'c, TContext, ParentContextProvided>
+where
+    ParentContextProvided: MutContextProvided
+{
+    type Context = TContext;
+    type ParentContextProvided = ParentContextProvided;
+
+    fn ctx(&self) -> &TContext {
+        self.start_ctx
+    }
+    
+    fn parent_ctx_provided(&self) -> &Self::ParentContextProvided {
+        &self.parent_ctx_provided
+    }
+}
+
+impl<'c, TContext, ParentContextProvided> MutContextProvided for StartMutContextProvidedWithParent<'c, TContext, ParentContextProvided>
+where
+    ParentContextProvided: MutContextProvided
+{
+    type ParentMutContextProvided = ParentContextProvided;
+    
+    fn mut_ctx(&mut self) -> &mut TContext {
+        self.start_ctx
     }
     
     fn parent_mut_ctx_provided(&mut self) -> &mut Self::ParentMutContextProvided {
@@ -3521,7 +3583,37 @@ macro_rules! __emit_ctx_provide {
         => { vis: $vis:vis, ctx: $ctx:ident$(, ctx_label: $ctx_label:ident)? }
         => $cont:path { $($cont_args:tt)* }
     ) => {
-        $cont!{ {} => $($cont_args)* }
+        $cont!{
+            {
+                impl $ctx {
+                    #[allow(dead_code)]
+                    pub fn provide<TParentContextProvided>(&self, parent_ctx_provided: TParentContextProvided) -> [<$ctx ඞProvided>]<impl $crate::context_dispatching::ContextProvided<Context = $ctx, ParentContextProvided = TParentContextProvided>>
+                    where TParentContextProvided: $crate::context_dispatching::ContextProvided + $($dependant_trait_constraints)+
+                    {
+                        [<$ctx ඞProvided>](
+                            $crate::context_dispatching::StartContextProvidedWithParent {
+                                start_ctx: self,
+                                parent_ctx_provided: parent_ctx_provided
+                            }
+                        )
+                    }
+
+                    #[allow(dead_code)]
+                    pub fn provide_mut<TParentContextProvided>(&mut self, parent_ctx_provided: TParentContextProvided) -> [<$ctx ඞMutProvided>]<impl $crate::context_dispatching::MutContextProvided<Context = $ctx, ParentContextProvided = TParentContextProvided>>
+                    where TParentContextProvided: $crate::context_dispatching::MutContextProvided + $($dependant_trait_constraints)+
+                    {
+                        [<$ctx ඞMutProvided>](
+                            $crate::context_dispatching::StartMutContextProvidedWithParent {
+                                start_ctx: self,
+                                parent_ctx_provided: parent_ctx_provided
+                            }
+                        )
+                    }
+
+                }
+            }
+            => $($cont_args)*
+        }
     };
 }
 #[macro_export]
@@ -4171,6 +4263,51 @@ mod tests {
         traits {
             CalledMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4];
             mut SetterMultiService <= [CalledMultiServiceImpl2, CalledMultiServiceImpl4]
+        }
+    }
+
+    #[test]
+    fn service_calls_another_service_from_provided_parent() {
+        let mut parent_context = ServiceCallsAnotherServiceFromThisParentContext::default();
+        let mut context = ServiceCallsAnotherServiceFromProvidedParentContext::default();
+        {
+            let mut mut_ctx_provided = context.provide_mut(parent_context.provide_mut());
+            mut_ctx_provided.get_mut_service().set_value(44);
+        }
+        {
+            let ctx_provided = context.provide(parent_context.provide());
+            let cs = ctx_provided.get_calling_service();
+            cs.call_service(2);
+        }
+        let expected_calls = vec![
+            "+additional_setter_service(44)",
+            "-additional_setter_service(44)",
+            "+calling_service(2)",
+            "+called_service(2)",
+            "+additional_service(2, 44)",
+            "-additional_service(2, 44)",
+            "-called_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*parent_context.provide().get_logged_service().get_calls(), expected_calls);
+    }
+    
+    //trace_macros!(true);
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCallsAnotherServiceFromProvidedParentContext {
+            CalledServiceImpl1 => called_service_def::CalledService;
+            CallingServiceImpl1 => CallingService;
+            extern => LoggingService;
+            AdditionalServiceImpl1 => AdditionalService, mut AdditionalSetterService;
+        }
+    }
+    //trace_macros!(false);
+
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCallsAnotherServiceFromThisParentContext {
+            LoggingServiceImpl1 => LoggingService, LoggedService;
         }
     }
 
