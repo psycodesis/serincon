@@ -470,6 +470,14 @@ macro_rules! service {
             TContextProvided: ContextProvided,
             DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
         { $($def)* }
+
+        impl<TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
+            for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
+        where
+            TContextProvided: MutContextProvided,
+            MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+            DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
     };
     // Entry point with dependency list.
     ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
@@ -492,14 +500,10 @@ macro_rules! service {
     };
     (
         $(#[$ctx_meta:meta])*
-        $vis:vis trait $trait_ty:ident as $name:ident {
-            $($def:tt)*
-        }
+        $vis:vis trait $trait_ty:ident as $name:ident $($rest:tt)+
     ) => {
         $(#[$ctx_meta])*
-        $vis trait $trait_ty {
-            $($def)*
-        }
+        $vis trait $trait_ty $($rest)+
 
         ::paste::paste!{
             #[allow(dead_code)]
@@ -3413,6 +3417,16 @@ macro_rules! __emit_impl_service {
                 {
                     $($def)*
                 }
+
+                impl<'c, TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
+                    for $crate::context_dispatching::MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
+                where
+                    TContextProvided: $crate::context_dispatching::MutContextProvided + $($dependant_trait_constraints)+,
+                    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+                    DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+                {
+                    $($def)*
+                }
             }
             => $($cont_args)*
         }
@@ -4291,6 +4305,13 @@ mod tests {
         ];
         assert_eq!(*parent_context.provide().get_logged_service().get_calls(), expected_calls);
     }
+
+    service_context! {
+        #[derive(Debug, Default)]
+        ServiceCallsAnotherServiceFromThisParentContext {
+            LoggingServiceImpl1 => LoggingService, LoggedService;
+        }
+    }
     
     //trace_macros!(true);
     service_context! {
@@ -4304,12 +4325,35 @@ mod tests {
     }
     //trace_macros!(false);
 
+    #[test]
+    fn service_calls_another_service_with_super_service() {
+        let mut context = ServiceCallsAnotherServiceWithSuperServiceContext::default();
+        let mut ctx_provided = context.provide_mut();
+        ctx_provided.get_mut_mut_calling_service().call_service(6);
+        ctx_provided.get_super_service().call_super(2);
+        let expected_calls = vec![
+            "+mut_sub_calling_service(6)",
+            "+set_super_rate(0.6)",
+            "-set_super_rate(0.6)",
+            "+call_super(6, 0.6)",
+            "-call_super(6, 0.6)",
+            "-mut_sub_calling_service(6)",
+            "+call_super(2, 0.6)",
+            "-call_super(2, 0.6)"
+        ];
+        assert_eq!(*ctx_provided.get_logged_service().get_calls(), expected_calls);
+    }
+    
+    //trace_macros!(true);
     service_context! {
         #[derive(Debug, Default)]
-        ServiceCallsAnotherServiceFromThisParentContext {
+        ServiceCallsAnotherServiceWithSuperServiceContext {
+            MutSubCallingService => mut MutCallingService;
+            SubServiceImpl => mut MutSubService, SuperService;
             LoggingServiceImpl1 => LoggingService, LoggedService;
         }
     }
+    //trace_macros!(false);
 
     #[derive(Debug, Default)]
     struct CallingMultipleServiceImpl1;
@@ -4555,6 +4599,65 @@ mod tests {
             }
         }
     }
+
+    service!{
+        trait MutCallingService as mut_calling_service {
+            fn call_service(&mut self, id: i32);
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct MutSubCallingService;
+
+    service!{
+        impl mut MutCallingService for MutSubCallingService where deps: mut MutSubService + SuperService + LoggingService {
+            fn call_service(&mut self, id: i32) {
+                self.get_logging_service().log(&format!("+mut_sub_calling_service({id})"));
+                self.get_mut_mut_sub_service().set_super_rate(f64::from(id) / 10_f64);
+                self.get_mut_mut_sub_service().call_super(id);
+                self.get_logging_service().log(&format!("-mut_sub_calling_service({id})"));
+            }
+        }
+    }
+
+    service!{
+        trait SuperService as super_service {
+            fn call_super(&self, id: i32);
+        }
+    }
+
+
+    service!{
+        trait MutSubService as mut_sub_service: SuperService {
+            fn set_super_rate(&mut self, rate: f64);
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct SubServiceImpl {
+        rate: f64
+    }
+
+    service!{
+        impl SuperService for SubServiceImpl where deps: LoggingService {
+            fn call_super(&self, id: i32) {
+                let rate = self.data().rate;
+                self.get_logging_service().log(&format!("+call_super({id}, {rate})"));
+                self.get_logging_service().log(&format!("-call_super({id}, {rate})"));
+            }
+        }
+    }
+
+    service!{
+        impl mut MutSubService for SubServiceImpl where deps: LoggingService {
+            fn set_super_rate(&mut self, rate: f64) {
+                self.get_logging_service().log(&format!("+set_super_rate({rate})"));
+                self.mut_data().rate = rate;
+                self.get_logging_service().log(&format!("-set_super_rate({rate})"));
+            }
+        }
+    }
+
 
     #[derive(Debug, Default)]
     struct LoggingServiceImpl1 {
