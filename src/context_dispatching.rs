@@ -10,68 +10,68 @@ pub use crate::visiting::*;
 use std::{marker::PhantomData};
 //use crate::visiting::{Boxed, DynSeq, Emit, IntoSeq, Seq, SeqGat};
 
-pub trait ServiceProvidedData<ServiceData> {
-    fn data(&self) -> &ServiceData;
+pub trait ServiceProvidedState<ServiceState> {
+    fn state(&self) -> &ServiceState;
 }
 
-pub trait MutServiceProvidedData<ServiceProvided>: ServiceProvidedData<ServiceProvided> {
-    fn mut_data(&mut self) -> &mut ServiceProvided;
+pub trait MutServiceProvidedState<ServiceProvided>: ServiceProvidedState<ServiceProvided> {
+    fn mut_state(&mut self) -> &mut ServiceProvided;
 }
 
-pub struct ServiceProvidedWithContext<ServiceData, TContextProvided, DataGetter>
+pub struct ServiceProvidedWithContext<ServiceState, TContextProvided, StateGetter>
 where
     TContextProvided: ContextProvided,
-    DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
+    StateGetter: Fn(&TContextProvided::Context) -> &ServiceState
 {
-    pub data_getter: DataGetter,
+    pub state_getter: StateGetter,
     pub ctx_provided: TContextProvided,
-    pub _service_phantom: PhantomData<ServiceData>
+    pub _service_phantom: PhantomData<ServiceState>
 }
 
-impl<ServiceData, TContextProvided, DataGetter> ServiceProvidedData<ServiceData>
-for ServiceProvidedWithContext<ServiceData, TContextProvided, DataGetter>
+impl<ServiceState, TContextProvided, StateGetter> ServiceProvidedState<ServiceState>
+for ServiceProvidedWithContext<ServiceState, TContextProvided, StateGetter>
 where
     TContextProvided: ContextProvided,
-    DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
+    StateGetter: Fn(&TContextProvided::Context) -> &ServiceState
 {
-    fn data(&self) -> &ServiceData {
-        (self.data_getter)(self.ctx_provided.ctx())
+    fn state(&self) -> &ServiceState {
+        (self.state_getter)(self.ctx_provided.ctx())
     }
 }
 
-pub struct MutServiceProvidedWithContext<ServiceData, TContextProvided, MutDataGetter, DataGetter>
+pub struct MutServiceProvidedWithContext<ServiceState, TContextProvided, MutStateGetter, StateGetter>
 where
     TContextProvided: MutContextProvided,
-    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceData,
-    DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
+    MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceState,
+    StateGetter: Fn(&TContextProvided::Context) -> &ServiceState
 {
-    pub data_getter: DataGetter,
-    pub mut_data_getter: MutDataGetter,
+    pub state_getter: StateGetter,
+    pub mut_state_getter: MutStateGetter,
     pub ctx_provided: TContextProvided,
-    pub _service_phantom: PhantomData<ServiceData>
+    pub _service_phantom: PhantomData<ServiceState>
 }
 
-impl<ServiceData, TContextProvided, MutDataGetter, DataGetter> ServiceProvidedData<ServiceData>
-for MutServiceProvidedWithContext<ServiceData, TContextProvided, MutDataGetter, DataGetter>
+impl<ServiceState, TContextProvided, MutStateGetter, StateGetter> ServiceProvidedState<ServiceState>
+for MutServiceProvidedWithContext<ServiceState, TContextProvided, MutStateGetter, StateGetter>
 where
     TContextProvided: MutContextProvided,
-    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceData,
-    DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
+    MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceState,
+    StateGetter: Fn(&TContextProvided::Context) -> &ServiceState
 {
-    fn data(&self) -> &ServiceData {
-        (self.data_getter)(self.ctx_provided.ctx())
+    fn state(&self) -> &ServiceState {
+        (self.state_getter)(self.ctx_provided.ctx())
     }
 }
 
-impl<'c, ServiceData, TContextProvided, MutDataGetter, DataGetter> MutServiceProvidedData<ServiceData>
-for MutServiceProvidedWithContext<ServiceData, TContextProvided, MutDataGetter, DataGetter>
+impl<'c, ServiceState, TContextProvided, MutStateGetter, StateGetter> MutServiceProvidedState<ServiceState>
+for MutServiceProvidedWithContext<ServiceState, TContextProvided, MutStateGetter, StateGetter>
 where
     TContextProvided: MutContextProvided + 'c,
-    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceData,
-    DataGetter: Fn(&TContextProvided::Context) -> &ServiceData
+    MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut ServiceState,
+    StateGetter: Fn(&TContextProvided::Context) -> &ServiceState
 {
-    fn mut_data(&mut self) -> &mut ServiceData {
-        (self.mut_data_getter)(self.ctx_provided.mut_ctx())
+    fn mut_state(&mut self) -> &mut ServiceState {
+        (self.mut_state_getter)(self.ctx_provided.mut_ctx())
     }
 }
 
@@ -453,33 +453,6 @@ macro_rules! service_context {
 
 #[macro_export]
 macro_rules! service {
-    // Entry point with dependency list.
-    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
-        ::demuncher::apply_pipe!{
-            { $($rest)+ }
-            => $crate::__split_deps_usings_and_def{}
-            => $crate::__emit_impl_service{ impl: $impl_ty, trait: $($trait_head)?$(::$trait_tail)* }
-            => $crate::__apply_paste{}
-        }
-    };
-    // Entry point with no dependencies.
-    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => { // $( where deps: $($deps:ident),+ )? { $($def:tt)* }
-        impl<TContextProvided, DataGetter> $($trait_head)?$(::$trait_tail)*
-            for ServiceProvidedWithContext<$impl_ty, TContextProvided, DataGetter>
-        where
-            TContextProvided: ContextProvided,
-            DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
-        { $($def)* }
-
-        impl<TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
-            for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
-        where
-            TContextProvided: MutContextProvided,
-            MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
-            DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
-        { $($def)* }
-    };
-    // Entry point with dependency list.
     ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
         ::demuncher::apply_pipe!{
             { $($rest)+ }
@@ -488,14 +461,75 @@ macro_rules! service {
             => $crate::__apply_paste{}
         }
     };
-    // Entry point with no dependencies.
-    ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => { // $( where deps: $($deps:ident),+ )? { $($def:tt)* }
-        impl<TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
-            for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
+    ( impl mut $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => {
+        impl<TContextProvided, MutStateGetter, StateGetter> $($trait_head)?$(::$trait_tail)*
+            for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
         where
             TContextProvided: MutContextProvided,
-            MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
-            DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+            MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
+    };
+    ( impl mut $impl_ty:path where deps: $($rest:tt)+ ) => {
+        ::demuncher::apply_pipe!{
+            { $($rest)+ }
+            => $crate::__split_deps_usings_and_def{}
+            => $crate::__emit_impl_mut_service{ impl: $impl_ty }
+            => $crate::__apply_paste{}
+        }
+    };
+    ( impl mut $impl_ty:path { $($def:tt)* } ) => {
+        impl<TContextProvided, MutStateGetter, StateGetter> MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
+        where
+            TContextProvided: MutContextProvided,
+            MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
+    };
+    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path where deps: $($rest:tt)+ ) => {
+        ::demuncher::apply_pipe!{
+            { $($rest)+ }
+            => $crate::__split_deps_usings_and_def{}
+            => $crate::__emit_impl_service{ impl: $impl_ty , trait: $($trait_head)?$(::$trait_tail)* }
+            => $crate::__apply_paste{}
+        }
+    };
+    ( impl $($trait_head:ident)?$(::$trait_tail:ident)* for $impl_ty:path { $($def:tt)* } ) => {
+        impl<TContextProvided, StateGetter> $($trait_head)?$(::$trait_tail)*
+            for ServiceProvidedWithContext<$impl_ty, TContextProvided, StateGetter>
+        where
+            TContextProvided: ContextProvided,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
+
+        impl<TContextProvided, MutStateGetter, StateGetter> $($trait_head)?$(::$trait_tail)*
+            for MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
+        where
+            TContextProvided: MutContextProvided,
+            MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
+    };
+    ( impl $impl_ty:path where deps: $($rest:tt)+ ) => {
+        ::demuncher::apply_pipe!{
+            { $($rest)+ }
+            => $crate::__split_deps_usings_and_def{}
+            => $crate::__emit_impl_service{ impl: $impl_ty }
+            => $crate::__apply_paste{}
+        }
+    };
+    ( impl $impl_ty:path { $($def:tt)* } ) => {
+        impl<TContextProvided, StateGetter> ServiceProvidedWithContext<$impl_ty, TContextProvided, StateGetter>
+        where
+            TContextProvided: ContextProvided,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+        { $($def)* }
+
+        impl<TContextProvided, MutStateGetter, StateGetter> MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
+        where
+            TContextProvided: MutContextProvided,
+            MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+            StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
         { $($def)* }
     };
     (
@@ -515,23 +549,23 @@ macro_rules! service {
                 }
             }
 
-            impl<TData, TContextProvided, DataGetter> [<$trait_ty ඞServiceProvider>]
-            for $crate::context_dispatching::ServiceProvidedWithContext<TData, TContextProvided, DataGetter>
+            impl<TState, TContextProvided, StateGetter> [<$trait_ty ඞServiceProvider>]
+            for $crate::context_dispatching::ServiceProvidedWithContext<TState, TContextProvided, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::ContextProvided + [<$trait_ty ඞServiceProvider>],
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $trait_ty + 's> {
                     self.ctx_provided.get_service()
                 }
             }
             
-            impl<TData, TContextProvided, MutDataGetter, DataGetter> [<$trait_ty ඞServiceProvider>]
-            for $crate::context_dispatching::MutServiceProvidedWithContext<TData, TContextProvided, MutDataGetter, DataGetter>
+            impl<TState, TContextProvided, MutStateGetter, StateGetter> [<$trait_ty ඞServiceProvider>]
+            for $crate::context_dispatching::MutServiceProvidedWithContext<TState, TContextProvided, MutStateGetter, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::MutContextProvided + [<$trait_ty ඞServiceProvider>],
-                MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut TData,
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut TState,
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_service<'s>(&'s self) -> ::std::boxed::Box<dyn $trait_ty + 's> {
                     self.ctx_provided.get_service()
@@ -552,12 +586,12 @@ macro_rules! service {
                 }
             }
 
-            impl<TData, TContextProvided, MutDataGetter, DataGetter> [<$trait_ty ඞMutServiceProvider>]
-            for $crate::context_dispatching::MutServiceProvidedWithContext<TData, TContextProvided, MutDataGetter, DataGetter>
+            impl<TState, TContextProvided, MutStateGetter, StateGetter> [<$trait_ty ඞMutServiceProvider>]
+            for $crate::context_dispatching::MutServiceProvidedWithContext<TState, TContextProvided, MutStateGetter, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::MutContextProvided + [<$trait_ty ඞMutServiceProvider>],
-                MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut TData,
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut TState,
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_mut_service<'s>(&'s mut self) -> ::std::boxed::Box<dyn $trait_ty + 's> {
                     self.ctx_provided.get_mut_service()
@@ -578,23 +612,23 @@ macro_rules! service {
                 }
             }
 
-            impl<TData, TContextProvided, DataGetter> [<$trait_ty ඞMultipleServiceProvider>]
-            for $crate::context_dispatching::ServiceProvidedWithContext<TData, TContextProvided, DataGetter>
+            impl<TState, TContextProvided, StateGetter> [<$trait_ty ඞMultipleServiceProvider>]
+            for $crate::context_dispatching::ServiceProvidedWithContext<TState, TContextProvided, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::ContextProvided + [<$trait_ty ඞMultipleServiceProvider>],
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
                     self.ctx_provided.get_services()
                 }
             }
             
-            impl<TData, TContextProvided, MutDataGetter, DataGetter> [<$trait_ty ඞMultipleServiceProvider>]
-            for $crate::context_dispatching::MutServiceProvidedWithContext<TData, TContextProvided, MutDataGetter, DataGetter>
+            impl<TState, TContextProvided, MutStateGetter, StateGetter> [<$trait_ty ඞMultipleServiceProvider>]
+            for $crate::context_dispatching::MutServiceProvidedWithContext<TState, TContextProvided, MutStateGetter, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::MutContextProvided + [<$trait_ty ඞMultipleServiceProvider>],
-                MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut TData,
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut TState,
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_services<'s>(&'s self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
                     self.ctx_provided.get_services()
@@ -615,12 +649,12 @@ macro_rules! service {
                 }
             }
             
-            impl<TData, TContextProvided, MutDataGetter, DataGetter> [<$trait_ty ඞMultipleMutServiceProvider>]
-            for $crate::context_dispatching::MutServiceProvidedWithContext<TData, TContextProvided, MutDataGetter, DataGetter>
+            impl<TState, TContextProvided, MutStateGetter, StateGetter> [<$trait_ty ඞMultipleMutServiceProvider>]
+            for $crate::context_dispatching::MutServiceProvidedWithContext<TState, TContextProvided, MutStateGetter, StateGetter>
             where
                 TContextProvided: $crate::context_dispatching::MutContextProvided + [<$trait_ty ඞMultipleMutServiceProvider>],
-                MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut TData,
-                DataGetter: Fn(&TContextProvided::Context) -> &TData
+                MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut TState,
+                StateGetter: Fn(&TContextProvided::Context) -> &TState
             {
                 fn get_mut_services<'s>(&'s mut self) -> impl $crate::visiting::Seq<'s, ItemGat = $crate::seq_gat_for_multi_trait!($trait_ty)> {
                     self.ctx_provided.get_mut_services()
@@ -1365,8 +1399,8 @@ macro_rules! __emit_trait_impl_from_local_ctx {
                     {
                         ::std::boxed::Box::new(
                             $crate::context_dispatching::MutServiceProvidedWithContext {
-                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                                mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
+                                state_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                mut_state_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
                                 ctx_provided: self,
                                 _service_phantom: ::std::marker::PhantomData
                             }
@@ -1423,7 +1457,7 @@ macro_rules! __emit_trait_impl_from_local_ctx {
                     {
                         ::std::boxed::Box::new(
                             $crate::context_dispatching::ServiceProvidedWithContext {
-                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                state_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
                                 ctx_provided: self,
                                 _service_phantom: ::std::marker::PhantomData
                             }
@@ -3005,7 +3039,7 @@ macro_rules! __emit_item_impl {
                                         forwarded_ctx: cp
                                     }
                                 ),
-                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                state_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
                                 _service_phantom: ::std::marker::PhantomData
                             }
                         )
@@ -3042,8 +3076,8 @@ macro_rules! __emit_item_impl {
                                         forwarded_ctx: cp
                                     }
                                 ),
-                                data_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
-                                mut_data_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
+                                state_getter: |c: &$ctx| -> &$impl_ty { c.services.get() },
+                                mut_state_getter: |c: &mut $ctx| -> &mut $impl_ty { c.services.get_mut() },
                                 _service_phantom: ::std::marker::PhantomData
                             }
                         )
@@ -3402,28 +3436,28 @@ macro_rules! __emit_impl_service {
             { $($dependant_trait_usings:tt)* }
             { $($def:tt)* }
         }
-        => { impl: $impl_ty:path, trait: $($trait_head:ident)?$(::$trait_tail:ident)* }
+        => { impl: $impl_ty:path $(, trait: $($trait_head:ident)?$(::$trait_tail:ident)*)? }
          => $cont:path { $($cont_args:tt)* }
     ) => {
         $cont!{
             {
                 $($dependant_trait_usings)*
 
-                impl<'c, TContextProvided, DataGetter> $($trait_head)?$(::$trait_tail)*
-                    for $crate::context_dispatching::ServiceProvidedWithContext<$impl_ty, TContextProvided, DataGetter>
+                impl<'c, TContextProvided, StateGetter> $($($trait_head)?$(::$trait_tail)* for)?
+                    $crate::context_dispatching::ServiceProvidedWithContext<$impl_ty, TContextProvided, StateGetter>
                 where
                     TContextProvided: $crate::context_dispatching::ContextProvided + $($dependant_trait_constraints)+,
-                    DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+                    StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
                 {
                     $($def)*
                 }
 
-                impl<'c, TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
-                    for $crate::context_dispatching::MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
+                impl<'c, TContextProvided, MutStateGetter, StateGetter> $($($trait_head)?$(::$trait_tail)* for)?
+                    $crate::context_dispatching::MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided + $($dependant_trait_constraints)+,
-                    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
-                    DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+                    MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+                    StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
                 {
                     $($def)*
                 }
@@ -3449,12 +3483,12 @@ macro_rules! __emit_impl_mut_service {
             {
                 $($dependant_trait_usings)*
 
-                impl<'c, TContextProvided, MutDataGetter, DataGetter> $($trait_head)?$(::$trait_tail)*
-                    for $crate::context_dispatching::MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutDataGetter, DataGetter>
+                impl<'c, TContextProvided, MutStateGetter, StateGetter> $($trait_head)?$(::$trait_tail)*
+                    for $crate::context_dispatching::MutServiceProvidedWithContext<$impl_ty, TContextProvided, MutStateGetter, StateGetter>
                 where
                     TContextProvided: $crate::context_dispatching::MutContextProvided + $($dependant_trait_constraints)+,
-                    MutDataGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
-                    DataGetter: Fn(&TContextProvided::Context) -> &$impl_ty
+                    MutStateGetter: Fn(&mut TContextProvided::Context) -> &mut $impl_ty,
+                    StateGetter: Fn(&TContextProvided::Context) -> &$impl_ty
                 {
                     $($def)*
                 }
@@ -4355,6 +4389,39 @@ mod tests {
     }
     //trace_macros!(false);
 
+    #[test]
+    fn service_calls_another_service_with_additional_service_with_self_impl() {
+        let ctx = 
+            ServiceCallsAnotherServiceWithAdditionalServiceWithSelfImplContext::init(
+                AdditionalServiceImpl2 { value: 33 }
+            )
+            .build();
+        let ctx_provided = ctx.provide();
+        ctx_provided.get_calling_service().call_service(2);
+        let expected_calls = vec![
+            "+calling_service(2)",
+            "+called_service(2)",
+            "+AdditionalServiceImpl2::call_service(2)",
+            "log_value(2, 33)",
+            "-AdditionalServiceImpl2::call_service(2)",
+            "-called_service(2)",
+            "-calling_service(2)"
+        ];
+        assert_eq!(*ctx_provided.get_logged_service().get_calls(), expected_calls);
+    }
+    
+    //trace_macros!(true);
+    service_context! {
+        #[derive(Debug)]
+        ServiceCallsAnotherServiceWithAdditionalServiceWithSelfImplContext {
+            CalledServiceImpl1 => called_service_def::CalledService;
+            CallingServiceImpl1 => CallingService;
+            LoggingServiceImpl1 => LoggingService, LoggedService;
+            AdditionalServiceImpl2 as additional => AdditionalService;
+        }
+    }
+    //trace_macros!(false);
+
     #[derive(Debug, Default)]
     struct CallingMultipleServiceImpl1;
 
@@ -4411,7 +4478,7 @@ mod tests {
         {
             fn call_service(&self, idx: usize) {
                 let logging: Box<dyn LoggingService> = self.get_logging_service();
-                let value = self.data().value;
+                let value = self.state().value;
                 logging.log(&format!("+called_multi_service({idx}, {value})"));
                 logging.log(&format!("-called_multi_service({idx}, {value})"));
             }
@@ -4423,7 +4490,7 @@ mod tests {
         {
             fn set_value(&mut self, value: i32) {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+setter_multi_service({value})"));
-                self.mut_data().value = value;
+                self.mut_state().value = value;
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("-setter_multi_service({value})"));
             }
         }
@@ -4445,7 +4512,7 @@ mod tests {
         {
             fn call_service(&self, idx: usize) {
                 let logging = self.get_logging_service();
-                let id = self.data().id;
+                let id = self.state().id;
                 logging.log(&format!("+called_multi_service3({idx}, {id})"));
                 self.get_additional_service().call_service(id);
                 logging.log(&format!("-called_multi_service3({idx}, {id})"));
@@ -4457,7 +4524,7 @@ mod tests {
         impl mut CalledIdSetterService for CalledMultiServiceImpl3 where deps: LoggingService {
             fn set_id(&mut self, id: i32) {
                 self.get_logging_service().log(&format!("+called_id_setter_service({id})"));
-                self.mut_data().id = id;
+                self.mut_state().id = id;
                 self.get_logging_service().log(&format!("-called_id_setter_service({id})"));
             }
         }
@@ -4473,7 +4540,7 @@ mod tests {
         {
             fn call_service(&self, idx: usize) {
                 let logging: Box<dyn LoggingService> = self.get_logging_service();
-                let value = self.data().value;
+                let value = self.state().value;
                 logging.log(&format!("+called_multi_service(4 + {idx}, {value})"));
                 logging.log(&format!("-called_multi_service(4 + {idx}, {value})"));
             }
@@ -4485,7 +4552,7 @@ mod tests {
         {
             fn set_value(&mut self, value: i32) {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+setter_multi_service(40 + {value})"));
-                self.mut_data().value = 40 + value;
+                self.mut_state().value = 40 + value;
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("-setter_multi_service(40 + {value})"));
             }
         }
@@ -4582,7 +4649,7 @@ mod tests {
         {
             fn call_service(&self, id: i32) {
                 let logging: Box<dyn LoggingService> = self.get_logging_service();
-                let value = self.data().value;
+                let value = self.state().value;
                 logging.log(&format!("+additional_service({id}, {value})"));
                 logging.log(&format!("-additional_service({id}, {value})"));
             }
@@ -4594,8 +4661,32 @@ mod tests {
         {
             fn set_value(&mut self, value: i32) {
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("+additional_setter_service({value})"));
-                self.mut_data().value = value;
+                self.mut_state().value = value;
                 (self.get_logging_service() as Box<dyn LoggingService>).log(&format!("-additional_setter_service({value})"));
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct AdditionalServiceImpl2 {
+        pub value: i32
+    }
+    
+    service!{
+        impl AdditionalServiceImpl2 where deps: LoggingService {
+            fn log_value(&self, id: i32) {
+                let value = self.state().value;
+                self.get_logging_service().log(&format!("log_value({id}, {value})"));
+            }
+        }
+    }
+    
+    service!{
+        impl AdditionalService for AdditionalServiceImpl2 where deps: LoggingService {
+            fn call_service(&self, id: i32) {
+                self.get_logging_service().log(&format!("+AdditionalServiceImpl2::call_service({id})"));
+                self.log_value(id);
+                self.get_logging_service().log(&format!("-AdditionalServiceImpl2::call_service({id})"));
             }
         }
     }
@@ -4641,7 +4732,7 @@ mod tests {
     service!{
         impl SuperService for SubServiceImpl where deps: LoggingService {
             fn call_super(&self, id: i32) {
-                let rate = self.data().rate;
+                let rate = self.state().rate;
                 self.get_logging_service().log(&format!("+call_super({id}, {rate})"));
                 self.get_logging_service().log(&format!("-call_super({id}, {rate})"));
             }
@@ -4652,7 +4743,7 @@ mod tests {
         impl mut MutSubService for SubServiceImpl where deps: LoggingService {
             fn set_super_rate(&mut self, rate: f64) {
                 self.get_logging_service().log(&format!("+set_super_rate({rate})"));
-                self.mut_data().rate = rate;
+                self.mut_state().rate = rate;
                 self.get_logging_service().log(&format!("-set_super_rate({rate})"));
             }
         }
@@ -4674,7 +4765,7 @@ mod tests {
         impl LoggingService for LoggingServiceImpl1
         {
             fn log(&self, message: &str) {
-                self.data().calls.borrow_mut().push(message.into());
+                self.state().calls.borrow_mut().push(message.into());
             }
         }
     }
@@ -4689,7 +4780,7 @@ mod tests {
         impl LoggedService for LoggingServiceImpl1
         {
             fn get_calls(&'_ self) -> Ref<'_, Vec<String>> {
-                self.data().calls.borrow()
+                self.state().calls.borrow()
             }
         }
     }
